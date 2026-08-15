@@ -1,1 +1,40 @@
 .DS_Store
+
+# Node
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# Expo
+.expo/
+dist/
+web-build/
+apps/mobile/ios/
+apps/mobile/android/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Go
+apps/api/bin/
+apps/api/tmp/
+go.work.sum
+
+# Environment
+.env
+.env.*
+!.env.example
+apps/mobile/.env
+apps/mobile/.env.*
+!apps/mobile/.env.example
+apps/api/.env
+apps/api/.env.*
+!apps/api/.env.example
+
+# Editors / tooling
+.idea/
+*.log
+coverage/

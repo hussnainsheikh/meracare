@@ -1,7 +1,35 @@
-# Senior Care --- Engineering Documentation
+# MeraCare
 
-This directory is the engineering source of truth for the Senior Care
-MVP.
+Senior care and family coordination platform.
+
+`docs/` is the engineering source of truth. Current build state, decisions, and
+next tasks live in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).
+
+## Repository
+
+```text
+apps/mobile        Expo / React Native app
+apps/api           Go modular monolith + REST API
+packages/contracts TypeScript contracts mirroring the Go API
+packages/config    Shared TypeScript / Prettier configuration
+```
+
+## Getting Started
+
+```bash
+pnpm install
+
+pnpm db:up                              # local PostgreSQL on port 55432
+cp apps/api/.env.example apps/api/.env
+pnpm api:migrate
+pnpm api:run                            # http://localhost:8080
+
+cp apps/mobile/.env.example apps/mobile/.env
+pnpm mobile
+```
+
+Checks: `pnpm typecheck`, `pnpm test`, `pnpm api:test` (set `TEST_DATABASE_URL`
+to include the database integration tests).
 
 ## Architecture Status
 
@@ -27,8 +55,8 @@ Deep Teal / green-blue direction:
 
 ### Illustrations
 
--   unDraw --- primary
--   Storyset --- secondary
+- unDraw --- primary
+- Storyset --- secondary
 
 ### Local/offline
 
@@ -112,8 +140,8 @@ Supporting colors are defined in
 
 ### Illustrations
 
--   **unDraw** --- primary illustration source
--   **Storyset** --- secondary illustration source
+- **unDraw** --- primary illustration source
+- **Storyset** --- secondary illustration source
 
 The complete visual specification is
 `docs/18-visual-theme-and-illustrations.md`.
