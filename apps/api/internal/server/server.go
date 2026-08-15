@@ -11,8 +11,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/meracare/api/internal/auth"
+	"github.com/meracare/api/internal/authz"
 	"github.com/meracare/api/internal/config"
 	"github.com/meracare/api/internal/database"
+	"github.com/meracare/api/internal/relationships"
+	"github.com/meracare/api/internal/seniors"
 	"github.com/meracare/api/internal/users"
 	"github.com/meracare/api/pkg/httpx"
 )
@@ -31,6 +34,13 @@ func New(deps Dependencies) http.Handler {
 	userService := users.NewService(userRepo)
 	userHandler := users.NewHandler(userService)
 
+	relationshipRepo := relationships.NewRepository(deps.Pool)
+	// Every senior-scoped route resolves access through this guard.
+	guard := authz.NewGuard(relationshipRepo)
+
+	seniorRepo := seniors.NewRepository(deps.Pool)
+	seniorHandler := seniors.NewHandler(seniors.NewService(seniorRepo, relationshipRepo), guard)
+
 	router := chi.NewRouter()
 	router.NotFound(httpx.NotFoundHandler())
 	router.MethodNotAllowed(httpx.MethodNotAllowedHandler())
@@ -48,6 +58,7 @@ func New(deps Dependencies) http.Handler {
 	router.Route("/v1", func(v1 chi.Router) {
 		v1.Use(auth.RequireAuth(deps.Verifier, userService))
 		v1.Mount("/me", userHandler.Routes())
+		v1.Mount("/seniors", seniorHandler.Routes())
 	})
 
 	return router

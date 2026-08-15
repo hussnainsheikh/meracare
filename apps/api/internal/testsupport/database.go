@@ -10,6 +10,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,12 +50,22 @@ func RequireDatabase(t *testing.T) *database.Pool {
 	return pool
 }
 
+// applicationTables is every table holding application data, listed explicitly
+// so a new table added in a later phase is a deliberate decision here rather
+// than silently leaking rows between tests.
+var applicationTables = []string{
+	"care_relationships",
+	"senior_profiles",
+	"users",
+}
+
 // truncate empties every application table. schema_migrations is preserved so
 // the schema is migrated once per database rather than once per test.
 func truncate(ctx context.Context, t *testing.T, pool *database.Pool) {
 	t.Helper()
 
-	if _, err := pool.Exec(ctx, `TRUNCATE TABLE users RESTART IDENTITY CASCADE`); err != nil {
+	statement := "TRUNCATE TABLE " + strings.Join(applicationTables, ", ") + " RESTART IDENTITY CASCADE"
+	if _, err := pool.Exec(ctx, statement); err != nil {
 		t.Fatalf("truncate test database: %v", err)
 	}
 }

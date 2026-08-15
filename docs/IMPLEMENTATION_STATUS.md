@@ -4,8 +4,8 @@ Last updated: 2026-08-15
 
 ## Current Phase
 
-**Phase 1 — Foundation: complete.** Next up is Phase 2 (User + SeniorProfile +
-CareRelationship + Solo mode).
+**Phase 2 — User + Senior: complete.** Next up is Phase 3 (invitations and the
+care circle).
 
 ## Repository State
 
@@ -16,9 +16,13 @@ apps/
     cmd/migrate/           migration CLI (up | status)
     internal/
       auth/                Supabase JWT verification, Principal, RequireAuth
+      authz/               relationship-based authorization middleware
+      care/                roles, permissions, statuses, per-role defaults
       config/              environment configuration
-      database/            pgx pool, embedded migrations + runner
-        migrations/        0001_init.sql
+      database/            pgx pool, embedded migrations + runner, error helpers
+        migrations/        0001_init.sql, 0002_seniors_and_relationships.sql
+      relationships/       care relationship model and repository
+      seniors/             senior profiles, /v1/seniors
       server/              router wiring, health/readiness
       testsupport/         integration-test database helper
       users/               application user model, repository, service, /v1/me
@@ -28,10 +32,11 @@ apps/
       validation/          request validation helpers
   mobile/                  Expo SDK 57 / React Native 0.86 / Expo Router
     src/
-      app/                 routes: index, sign-in, home
-      components/ui/       Button, Card, Screen, Text, TextField
+      app/                 routes: index, sign-in, home, onboarding, seniors/[id]
+      components/ui/       Button, Card, OptionCard, Screen, Text, TextField
       features/auth/       session restore, sign in/up/out
       features/profile/    /v1/me query + mutation
+      features/seniors/    senior queries and mutations
       lib/                 env, supabase, secure storage, api client, query client
       stores/              small Zustand UI store
       theme/               semantic design tokens + ThemeProvider
@@ -74,6 +79,35 @@ docker-compose.yml         local PostgreSQL for development and tests
   token, 200 with a valid token (creating the application user on first call),
   `PATCH /v1/me` updates and rejects invalid input with `VALIDATION_FAILED`.
 - Mobile: `tsc --noEmit` clean, `expo lint` clean, 16 Jest tests pass.
+
+## Completed — Phase 2
+
+| # | Item | Where |
+|---|------|-------|
+| 17 | User model | Phase 1; extended by the relationships that reference it |
+| 18 | SeniorProfile | `senior_profiles` table, `internal/seniors` |
+| 19 | CareRelationship | `care_relationships` table, `internal/relationships` |
+| 20 | Solo mode | `mode=self` links the profile to the caller and grants the `senior` role, with no invitation |
+| 21 | Create senior | `POST /v1/seniors`, mobile onboarding screen |
+| 22 | Edit senior | `PATCH /v1/seniors/{id}`, mobile edit screen |
+| 23 | Senior dashboard | `GET /v1/seniors/{id}`, mobile dashboard shell |
+| — | Role/permission enforcement | `internal/authz` guard on every senior-scoped route |
+
+### Verified end to end
+
+- `go test -race ./...` green across 13 packages, including integration tests
+  against real PostgreSQL.
+- Over HTTP, with two separate accounts: a stranger listing seniors gets an
+  empty list; reading or editing another circle's senior by ID returns 404, not
+  403, so senior IDs cannot be probed.
+- A professional caregiver — a legitimate member — is refused `PATCH` on their
+  own client, proving the check is per-permission and not merely per-membership.
+- Unknown request fields are rejected, so a client cannot submit its own
+  `permissions`; a second Solo Mode profile returns `CONFLICT`.
+- Constraint-level: an unrecognised permission cannot be stored, a circle
+  cannot hold two seniors, a user cannot hold two memberships of one circle, and
+  a failed create leaves no orphan profile.
+- Mobile: `tsc --noEmit` clean, `expo lint` clean, 20 Jest tests pass.
 
 ## Architectural Decisions Taken in Phase 1
 
@@ -120,6 +154,37 @@ docs/12 or docs/17 was changed.
 10. **Local PostgreSQL uses host port 55432**, leaving the conventional 5432
     free for other projects on a developer machine.
 
+## Architectural Decisions Taken in Phase 2
+
+1. **Permissions are stored per relationship, not derived from the role.** A
+   circle can narrow or widen one person's access without inventing new roles,
+   which is what Phase 3's invitations will set. The role remains a label and a
+   source of defaults; the stored set is what the API enforces.
+2. **A denied senior returns 404, never 403.** Distinguishing "you may not see
+   this" from "this does not exist" would let anyone enumerate the platform's
+   seniors by probing IDs. Malformed IDs take the same path, without a query.
+3. **Authorization is middleware, not a handler convention.** A handler obtains
+   the senior it operates on from `authz.MustRelationship`, which only exists
+   after a guard has run — so a route cannot accidentally skip the check and
+   still function.
+4. **A profile and its creator's membership are committed in one transaction.**
+   A senior with no relationship would be visible to nobody, and unreachable
+   even by the person who created it.
+5. **The database mirrors the domain vocabulary.** CHECK constraints on role,
+   status, and the permissions array mean the API cannot persist a value the
+   domain does not define, whatever reaches the handler.
+6. **The emergency contact is visible to every member, including professional
+   caregivers.** It was initially withheld from caregivers as "private family
+   information", which was the wrong reading of docs/02: a caregiver present
+   with a senior is exactly who needs to know who to call. The restriction in
+   docs/02 concerns information unrelated to the senior's care.
+7. **Care events are deferred to Phase 7.** Creating a circle is a
+   `MEMBER_JOINED` event under docs/04, but the events table belongs to Phase 7
+   and the plan is explicit about building incrementally. No backfill will be
+   needed, since there is no production data.
+8. **`emergency_contact` is a single text field**, matching docs/03. It may
+   split into a name and a phone number when the UI calls for it.
+
 ## Blockers
 
 1. **Supabase anon key still needed.** The project at
@@ -153,18 +218,18 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
 - Phase 9 — dashboards; Phase 10 — messaging
 - Phase 11 — offline (`expo-sqlite`, sync queue); Phase 12 — quality
 
-## Next Tasks (Phase 2)
+## Next Tasks (Phase 3 — invitations and the care circle)
 
-1. Migration `0002`: `senior_profiles` and `care_relationships` with the roles,
-   permissions and statuses from `packages/contracts/src/care.ts`.
-2. `internal/seniors` and `internal/relationships` modules.
-3. Relationship-based authorization middleware: resolve the caller's
-   relationship to `{seniorId}` and check the required permission (docs/02).
-   Authorization tests come with it, not after it.
-4. `GET/POST /v1/seniors`, `GET/PATCH /v1/seniors/{id}`.
-5. Solo onboarding: create a senior profile for yourself with a `senior`
-   relationship, no invitation required (docs/04).
-6. Mobile: onboarding route, senior creation form, senior dashboard shell.
+1. Migration `0003`: `invitations` with token, proposed role and permissions,
+   expiry, and status.
+2. `GET /v1/seniors/{id}/members` — the care circle, behind `members.view`.
+3. `POST /v1/seniors/{id}/invitations` — behind `members.invite`, validating the
+   inviter's authority and refusing to grant permissions the inviter lacks.
+4. Accept an invitation: create the `active` relationship, and reconcile with
+   the pending status this phase already models.
+5. `DELETE`/`PATCH` on a member — revoke rather than delete, so care history
+   keeps its author.
+6. Mobile: care-circle screen, invite form, accept-invitation flow.
 
 ## Running It
 
