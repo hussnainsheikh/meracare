@@ -1,0 +1,203 @@
+# Domain Model
+
+## Core Entities
+
+### User
+
+-   id
+-   auth_user_id
+-   display_name
+-   avatar_url
+-   phone
+-   created_at
+-   updated_at
+
+### SeniorProfile
+
+-   id
+-   user_id (nullable for a managed senior without an account)
+-   display_name
+-   date_of_birth
+-   photo_url
+-   phone
+-   address
+-   emergency_contact
+-   created_at
+-   updated_at
+
+### CareRelationship
+
+-   id
+-   senior_id
+-   user_id
+-   role
+-   permissions
+-   status
+-   created_at
+-   updated_at
+
+### Invitation
+
+-   id
+-   senior_id
+-   inviter_user_id
+-   invitee_email or invitee_phone
+-   role
+-   permissions
+-   token/reference
+-   expires_at
+-   status
+-   created_at
+
+### CareTaskTemplate
+
+Defines recurring task rules.
+
+-   id
+-   senior_id
+-   title
+-   description
+-   assigned_user_id
+-   recurrence_rule
+-   due_time
+-   active
+-   created_at
+-   updated_at
+
+### CareTaskInstance
+
+A concrete occurrence of a task.
+
+-   id
+-   template_id
+-   senior_id
+-   assigned_user_id
+-   scheduled_for
+-   status
+-   completed_at
+-   completed_by
+-   notes
+-   created_at
+-   updated_at
+
+Statuses:
+
+-   `pending`
+-   `completed`
+-   `skipped`
+-   `overdue`
+-   `cancelled`
+
+### Medication
+
+-   id
+-   senior_id
+-   name
+-   dosage
+-   instructions
+-   active
+-   created_at
+-   updated_at
+
+### MedicationSchedule
+
+-   id
+-   medication_id
+-   recurrence_rule
+-   scheduled_time
+-   active
+
+### MedicationInstance
+
+A scheduled medication occurrence.
+
+-   id
+-   medication_id
+-   senior_id
+-   scheduled_for
+-   status
+-   completed_at
+-   completed_by
+-   notes
+
+### Appointment
+
+-   id
+-   senior_id
+-   title
+-   provider_name
+-   location
+-   scheduled_at
+-   assigned_user_id
+-   notes
+-   status
+
+### CareNote
+
+-   id
+-   senior_id
+-   author_user_id
+-   content
+-   created_at
+-   updated_at
+
+### CareEvent
+
+Immutable event describing meaningful activity.
+
+-   id
+-   senior_id
+-   actor_user_id
+-   event_type
+-   entity_type
+-   entity_id
+-   metadata
+-   occurred_at
+
+Examples:
+
+-   `TASK_COMPLETED`
+-   `TASK_MISSED`
+-   `MEDICATION_TAKEN`
+-   `MEDICATION_MISSED`
+-   `APPOINTMENT_CREATED`
+-   `NOTE_ADDED`
+-   `MEMBER_INVITED`
+-   `MEMBER_JOINED`
+
+### Notification
+
+-   id
+-   user_id
+-   type
+-   title
+-   body
+-   entity_type
+-   entity_id
+-   read_at
+-   created_at
+
+### Conversation / Message
+
+Reserved for care-circle chat.
+
+The MVP can scope conversations to one senior/care circle.
+
+## Data Relationships
+
+``` text
+User
+  └──< CareRelationship >── SeniorProfile
+                              ├──< CareTaskTemplate
+                              ├──< CareTaskInstance
+                              ├──< Medication
+                              ├──< Appointment
+                              ├──< CareNote
+                              └──< CareEvent
+```
+
+## Design Rule
+
+Use relational foreign keys and database constraints for core
+relationships. Do not duplicate authoritative relationship state across
+arbitrary JSON blobs.
