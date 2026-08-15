@@ -1,0 +1,5 @@
+// The Go module lives in apps/api rather than at the repository root.
+// This workspace file lets gopls and `go` commands find it from anywhere.
+go 1.24.5
+
+use ./apps/api

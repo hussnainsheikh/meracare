@@ -1,0 +1,27 @@
+{
+  "name": "meracare",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MeraCare — senior care and family coordination platform",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "mobile": "pnpm --filter @meracare/mobile start",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yaml,yml}\"",
+    "test": "pnpm -r test",
+    "api:run": "cd apps/api && go run ./cmd/api",
+    "api:migrate": "cd apps/api && go run ./cmd/migrate up",
+    "api:test": "cd apps/api && go test ./...",
+    "api:lint": "cd apps/api && go vet ./...",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}
