@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/meracare/api/internal/database"
 )
 
@@ -51,7 +50,7 @@ func (r *Repository) EnsureByAuthUserID(ctx context.Context, authUserID uuid.UUI
 	// Another account already claims this email address. Fall back to creating
 	// the user without one rather than refusing the sign-in; the address stays
 	// authoritative in Supabase Auth.
-	if isUniqueViolation(err, "users_email_lower_key") {
+	if database.IsUniqueViolation(err, "users_email_lower_key") {
 		return scanUser(r.pool.QueryRow(ctx, query, authUserID, nil, displayName))
 	}
 	return User{}, fmt.Errorf("ensure user: %w", err)
@@ -138,15 +137,4 @@ func nullableString(value *string) *string {
 		return nil
 	}
 	return &trimmed
-}
-
-// isUniqueViolation reports whether err is a unique-constraint violation for
-// the named constraint.
-func isUniqueViolation(err error, constraint string) bool {
-	const uniqueViolation = "23505"
-
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) &&
-		pgErr.Code == uniqueViolation &&
-		pgErr.ConstraintName == constraint
 }
