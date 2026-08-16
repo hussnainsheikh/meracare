@@ -1,6 +1,8 @@
 export * from './care';
+export * from './circle';
 export * from './errors';
 export * from './pagination';
+export * from './permission-labels';
 export * from './senior';
 export * from './user';
 

@@ -14,6 +14,8 @@ import (
 	"github.com/meracare/api/internal/authz"
 	"github.com/meracare/api/internal/config"
 	"github.com/meracare/api/internal/database"
+	"github.com/meracare/api/internal/invitations"
+	"github.com/meracare/api/internal/members"
 	"github.com/meracare/api/internal/relationships"
 	"github.com/meracare/api/internal/seniors"
 	"github.com/meracare/api/internal/users"
@@ -41,6 +43,17 @@ func New(deps Dependencies) http.Handler {
 	seniorRepo := seniors.NewRepository(deps.Pool)
 	seniorHandler := seniors.NewHandler(seniors.NewService(seniorRepo, relationshipRepo), guard)
 
+	memberHandler := members.NewHandler(members.NewService(relationshipRepo), guard)
+
+	requireAuth := auth.RequireAuth(deps.Verifier, userService)
+	invitationService := invitations.NewService(
+		invitations.NewRepository(deps.Pool),
+		relationshipRepo,
+		userLookup{repo: userRepo},
+		seniorRepo,
+	)
+	invitationHandler := invitations.NewHandler(invitationService, guard, requireAuth)
+
 	router := chi.NewRouter()
 	router.NotFound(httpx.NotFoundHandler())
 	router.MethodNotAllowed(httpx.MethodNotAllowedHandler())
@@ -55,10 +68,20 @@ func New(deps Dependencies) http.Handler {
 	router.Get("/healthz", healthHandler)
 	router.Get("/readyz", readyHandler(deps.Pool))
 
+	// Invitations are mounted outside the authenticated group: previewing an
+	// invitation must work before the recipient has an account. The routes that
+	// need a signed-in user apply the middleware themselves.
+	router.Route("/v1/invitations", func(tokens chi.Router) {
+		tokens.Mount("/", invitationHandler.TokenRoutes())
+	})
+
 	router.Route("/v1", func(v1 chi.Router) {
-		v1.Use(auth.RequireAuth(deps.Verifier, userService))
+		v1.Use(requireAuth)
 		v1.Mount("/me", userHandler.Routes())
-		v1.Mount("/seniors", seniorHandler.Routes())
+		v1.Mount("/seniors", seniorHandler.Routes(seniors.SubRoutes{
+			Members:     memberHandler.Routes(),
+			Invitations: invitationHandler.SeniorRoutes(),
+		}))
 	})
 
 	return router

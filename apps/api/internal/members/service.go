@@ -1,0 +1,133 @@
+// Package members manages an existing care circle: who is in it, what they may
+// do, and removing them.
+//
+// Joining is the invitation flow's job (internal/invitations); this package
+// owns everything after that point.
+package members
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/relationships"
+)
+
+// Domain failures the transport layer maps onto responses.
+var (
+	// ErrNotFound is returned when the membership does not exist, or belongs to
+	// a different senior than the one in the URL.
+	ErrNotFound = errors.New("member not found")
+	// ErrCannotModifySenior is returned for an attempt to change or remove the
+	// membership of the person the circle exists for.
+	ErrCannotModifySenior = errors.New("the senior's own membership cannot be changed")
+	// ErrPermissionEscalation is returned when the editor tried to grant
+	// permissions they do not hold.
+	ErrPermissionEscalation = errors.New("cannot grant permissions you do not hold")
+)
+
+// EscalationError carries the refused permissions.
+type EscalationError struct {
+	Refused care.PermissionSet
+}
+
+func (e *EscalationError) Error() string {
+	return fmt.Sprintf("cannot grant permissions you do not hold: %v", e.Refused.Strings())
+}
+
+func (e *EscalationError) Unwrap() error { return ErrPermissionEscalation }
+
+// Service manages care-circle membership.
+type Service struct {
+	relationships *relationships.Repository
+}
+
+// NewService builds the service.
+func NewService(relationshipRepo *relationships.Repository) *Service {
+	return &Service{relationships: relationshipRepo}
+}
+
+// List returns the senior's active care circle.
+func (s *Service) List(ctx context.Context, seniorID uuid.UUID) ([]relationships.Member, error) {
+	return s.relationships.ListMembers(ctx, seniorID)
+}
+
+// UpdatePermissions changes what a member may do.
+//
+// Two rules apply, in this order:
+//
+//  1. The senior's own membership is untouchable. Their circle exists for them,
+//     and letting a member strip the senior's access would be the sharpest
+//     escalation available.
+//  2. The editor may only grant permissions they themselves hold, exactly as
+//     when inviting. Otherwise `members.manage` would be a route to everything.
+func (s *Service) UpdatePermissions(
+	ctx context.Context,
+	editor relationships.Relationship,
+	seniorID uuid.UUID,
+	relationshipID uuid.UUID,
+	requested []care.Permission,
+) (relationships.Relationship, error) {
+	target, err := s.load(ctx, seniorID, relationshipID)
+	if err != nil {
+		return relationships.Relationship{}, err
+	}
+
+	if target.Role == care.RoleSenior {
+		return relationships.Relationship{}, ErrCannotModifySenior
+	}
+
+	delegation := care.Delegate(editor.Permissions, target.Role, requested)
+	if !delegation.OK() {
+		return relationships.Relationship{}, &EscalationError{Refused: delegation.Refused}
+	}
+
+	return s.relationships.UpdatePermissions(ctx, target.ID, delegation.Granted)
+}
+
+// Revoke removes a member from the circle.
+//
+// The relationship row survives with status `revoked`, so anything they
+// authored keeps its author, while every authorization check — which requires
+// an active relationship — starts failing immediately.
+func (s *Service) Revoke(
+	ctx context.Context,
+	seniorID uuid.UUID,
+	relationshipID uuid.UUID,
+) (relationships.Relationship, error) {
+	target, err := s.load(ctx, seniorID, relationshipID)
+	if err != nil {
+		return relationships.Relationship{}, err
+	}
+
+	if target.Role == care.RoleSenior {
+		return relationships.Relationship{}, ErrCannotModifySenior
+	}
+
+	return s.relationships.RevokeMembership(ctx, target.ID)
+}
+
+// load fetches a membership and confirms it belongs to the senior in the URL.
+//
+// Without that second check, a member of one circle could address a membership
+// in another by ID and act on it, since the guard only authorized them for
+// their own senior.
+func (s *Service) load(
+	ctx context.Context,
+	seniorID uuid.UUID,
+	relationshipID uuid.UUID,
+) (relationships.Relationship, error) {
+	target, err := s.relationships.GetByID(ctx, relationshipID)
+	if errors.Is(err, relationships.ErrNotFound) {
+		return relationships.Relationship{}, ErrNotFound
+	}
+	if err != nil {
+		return relationships.Relationship{}, err
+	}
+	if target.SeniorID != seniorID {
+		return relationships.Relationship{}, ErrNotFound
+	}
+	return target, nil
+}

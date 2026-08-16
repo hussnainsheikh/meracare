@@ -54,6 +54,7 @@ func RequireDatabase(t *testing.T) *database.Pool {
 // so a new table added in a later phase is a deliberate decision here rather
 // than silently leaking rows between tests.
 var applicationTables = []string{
+	"invitations",
 	"care_relationships",
 	"senior_profiles",
 	"users",

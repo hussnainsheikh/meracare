@@ -33,9 +33,19 @@ func NewHandler(service *Service, guard *authz.Guard) *Handler {
 	return &Handler{service: service, guard: guard}
 }
 
+// SubRoutes are the senior-scoped subtrees mounted beneath `/{seniorID}`.
+//
+// They are passed in rather than mounted alongside, so every senior-scoped path
+// shares one `{seniorID}` parameter and the guard reads the same value whatever
+// the resource.
+type SubRoutes struct {
+	Members     chi.Router
+	Invitations chi.Router
+}
+
 // Routes mounts the senior endpoints. The caller applies authentication; each
 // senior-scoped route additionally passes through the authorization guard.
-func (h *Handler) Routes() chi.Router {
+func (h *Handler) Routes(sub SubRoutes) chi.Router {
 	router := chi.NewRouter()
 
 	router.Get("/", h.list)
@@ -44,6 +54,13 @@ func (h *Handler) Routes() chi.Router {
 	router.Route("/{"+authz.SeniorIDParam+"}", func(senior chi.Router) {
 		senior.With(h.guard.RequirePermission(care.PermissionSeniorView)).Get("/", h.get)
 		senior.With(h.guard.RequirePermission(care.PermissionSeniorEdit)).Patch("/", h.update)
+
+		if sub.Members != nil {
+			senior.Mount("/members", sub.Members)
+		}
+		if sub.Invitations != nil {
+			senior.Mount("/invitations", sub.Invitations)
+		}
 	})
 
 	return router

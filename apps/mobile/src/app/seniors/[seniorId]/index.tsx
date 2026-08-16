@@ -88,6 +88,25 @@ export default function SeniorDashboardScreen() {
         ) : null}
       </Card>
 
+      {can(profile, 'members.view') ? (
+        <Card>
+          <Text variant="sectionHeading">Care circle</Text>
+          <Text variant="body" color="secondary">
+            The family and caregivers involved in this person&apos;s care.
+          </Text>
+          <Button
+            variant="secondary"
+            label="View care circle"
+            onPress={() =>
+              router.push({
+                pathname: '/seniors/[seniorId]/circle',
+                params: { seniorId: profile.id },
+              })
+            }
+          />
+        </Card>
+      ) : null}
+
       <Card>
         <Text variant="sectionHeading">Care</Text>
         <Text variant="body" color="secondary">

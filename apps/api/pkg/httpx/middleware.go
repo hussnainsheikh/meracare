@@ -31,7 +31,7 @@ func RequestLogger(base *slog.Logger) func(http.Handler) http.Handler {
 			logger := base.With(
 				slog.String("request_id", requestID),
 				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
+				slog.String("path", RedactPath(r.URL.Path)),
 			)
 			ctx := logging.WithLogger(r.Context(), logger)
 			r = r.WithContext(ctx)

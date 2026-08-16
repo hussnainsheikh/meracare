@@ -21,6 +21,12 @@ export interface RequestOptions {
    * offline completion (docs/05-api-and-backend-spec.md).
    */
   idempotencyKey?: string;
+  /**
+   * Set false for the few endpoints that work without a session — reading an
+   * invitation from its token, which someone must be able to do before they
+   * have an account. Defaults to true.
+   */
+  authenticated?: boolean;
 }
 
 /** Resolves the current access token, refreshing it if Supabase deems it stale. */
@@ -44,12 +50,12 @@ export async function apiRequest<TResponse>(
   path: string,
   options: RequestOptions = {},
 ): Promise<TResponse> {
-  const { method = 'GET', body, signal, idempotencyKey } = options;
+  const { method = 'GET', body, signal, idempotencyKey, authenticated = true } = options;
 
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    Authorization: `Bearer ${await accessToken()}`,
-  };
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (authenticated) {
+    headers.Authorization = `Bearer ${await accessToken()}`;
+  }
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 

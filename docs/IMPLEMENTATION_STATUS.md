@@ -4,8 +4,7 @@ Last updated: 2026-08-15
 
 ## Current Phase
 
-**Phase 2 — User + Senior: complete.** Next up is Phase 3 (invitations and the
-care circle).
+**Phase 3 — Care Circle & Invitations: complete.** Next up is Phase 4 (tasks).
 
 ## Repository State
 
@@ -16,11 +15,13 @@ apps/
     cmd/migrate/           migration CLI (up | status)
     internal/
       auth/                Supabase JWT verification, Principal, RequireAuth
-      authz/               relationship-based authorization middleware
-      care/                roles, permissions, statuses, per-role defaults
+      authz/               relationship-based authorization middleware + guard
+      care/                roles, permissions, statuses, defaults, delegation
       config/              environment configuration
       database/            pgx pool, embedded migrations + runner, error helpers
-        migrations/        0001_init.sql, 0002_seniors_and_relationships.sql
+        migrations/        0001_init, 0002_seniors_and_relationships, 0003_invitations
+      invitations/         tokens, lifecycle, accept; /v1/invitations
+      members/             care-circle membership; /v1/seniors/{id}/members
       relationships/       care relationship model and repository
       seniors/             senior profiles, /v1/seniors
       server/              router wiring, health/readiness
@@ -32,9 +33,12 @@ apps/
       validation/          request validation helpers
   mobile/                  Expo SDK 57 / React Native 0.86 / Expo Router
     src/
-      app/                 routes: index, sign-in, home, onboarding, seniors/[id]
-      components/ui/       Button, Card, OptionCard, Screen, Text, TextField
+      app/                 index, sign-in, home, onboarding, seniors/[id]/*,
+                           invitations/[token]
+      components/ui/       Button, Card, OptionCard, PermissionToggle, Screen,
+                           Text, TextField
       features/auth/       session restore, sign in/up/out
+      features/circle/     members, invitations, accept
       features/profile/    /v1/me query + mutation
       features/seniors/    senior queries and mutations
       lib/                 env, supabase, secure storage, api client, query client
@@ -108,6 +112,37 @@ docker-compose.yml         local PostgreSQL for development and tests
   cannot hold two seniors, a user cannot hold two memberships of one circle, and
   a failed create leaves no orphan profile.
 - Mobile: `tsc --noEmit` clean, `expo lint` clean, 20 Jest tests pass.
+
+## Completed — Phase 3
+
+| Area | Where |
+|------|-------|
+| Care circle | `internal/members`, `GET/PATCH/DELETE /v1/seniors/{id}/members` |
+| Invitations | `internal/invitations`, `POST/GET /v1/seniors/{id}/invitations` |
+| Accept flow | `GET /v1/invitations/{token}`, `POST /v1/invitations/{token}/accept` |
+| Revoke invitation | `POST /v1/invitations/{id}/revoke` |
+| Permission delegation | `internal/care/delegation.go` |
+| Database | migration `0003_invitations` |
+| Mobile | care circle, invite flow, pending invitations, accept screen, member access editing |
+
+### Verified end to end
+
+- `go test -race -count=1 ./...` green across 15 packages, including the
+  invitation and membership integration suites.
+- Migrations applied to a brand-new database, then the full integration suite
+  re-run against it.
+- Over HTTP with three separate accounts: an intruder gets 404 for listing
+  members, listing invitations, and revoking an invitation; 403 with a distinct
+  message for attempting to accept an invitation addressed to somebody else.
+- A spent token returns `CONFLICT` on reuse. A family member holding
+  `members.invite` but not `members.manage` gets 404 on both `PATCH` and
+  `DELETE` of a member. A caregiver attempting to grant themselves `senior.edit`
+  and `members.manage` gets 404.
+- Revoking a member removed their access immediately (0 seniors reachable, 404
+  on the senior) while the relationship row survived as `revoked`.
+- The invitation token never appeared in the server log; the path was recorded
+  as `/v1/invitations/[redacted]/accept`.
+- Mobile: `tsc --noEmit` clean, `expo lint` clean, 34 Jest tests pass.
 
 ## Architectural Decisions Taken in Phase 1
 
@@ -185,6 +220,48 @@ docs/12 or docs/17 was changed.
 8. **`emergency_contact` is a single text field**, matching docs/03. It may
    split into a name and a phone number when the UI calls for it.
 
+## Architectural Decisions Taken in Phase 3
+
+1. **Only the token's hash is stored.** The raw token exists in memory and in
+   the single response that delivers it. A database disclosure therefore hands
+   an attacker no working invitations. Plain SHA-256 is the right primitive for
+   a 256-bit random value; bcrypt-style hashes exist to slow brute force against
+   low-entropy human secrets, and would only add cost per lookup here.
+2. **Expiry is computed, never merely stored.** `EffectiveStatus` treats a
+   lapsed invitation as expired at read time, so correctness never depends on a
+   sweep having run. `ExpirePending` exists for housekeeping only.
+3. **A token is consumed by a conditional UPDATE.** Acceptance requires the row
+   to still be pending and unexpired, inside the same transaction that creates
+   the membership. Two concurrent accepts therefore produce exactly one
+   membership — the loser finds no row to update.
+4. **Delegation distinguishes an explicit request from a default.** Asking for
+   permissions the inviter lacks is an escalation attempt and is refused
+   outright; omitting the list means "the usual", which is silently narrowed to
+   what the inviter can confer. The same rule governs editing a member, so
+   `members.invite` and `members.manage` are not routes to every other
+   permission.
+5. **The senior's own membership is immutable.** It cannot be edited or revoked
+   through the member endpoints. Letting a member strip the senior's access
+   would be the sharpest escalation the product offers.
+6. **The `senior` role is not invitable.** A circle has exactly one senior,
+   established when the profile is created.
+7. **Invitation tokens are redacted from logs.** They travel in the URL, which
+   is the natural shape for a link, so `httpx.RedactPath` replaces the segment
+   before anything is written — docs/09 forbids logging credentials.
+8. **The preview endpoint is unauthenticated but deliberately thin.** Someone
+   with no account must be able to see what they are joining. It carries the
+   senior's name, the inviter's name, the role and the permissions — no contact
+   details, no care data, no member list.
+9. **Acceptance is bound to the invited address.** The signed-in user's email
+   must match the invitee, so obtaining a token is not by itself enough to join
+   a care circle.
+10. **A revoked member is invited back onto the same relationship row.** The
+    membership is revived rather than replaced, so anything they authored keeps
+    its author.
+11. **Emergency contact is unchanged from Phase 2.** It follows `senior.view`
+    like every other profile field. There is no role-based rule for it, which is
+    what the Phase 3 brief asked to avoid.
+
 ## Blockers
 
 1. **Supabase anon key still needed.** The project at
@@ -218,18 +295,23 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
 - Phase 9 — dashboards; Phase 10 — messaging
 - Phase 11 — offline (`expo-sqlite`, sync queue); Phase 12 — quality
 
-## Next Tasks (Phase 3 — invitations and the care circle)
+## Deferred, and why
 
-1. Migration `0003`: `invitations` with token, proposed role and permissions,
-   expiry, and status.
-2. `GET /v1/seniors/{id}/members` — the care circle, behind `members.view`.
-3. `POST /v1/seniors/{id}/invitations` — behind `members.invite`, validating the
-   inviter's authority and refusing to grant permissions the inviter lacks.
-4. Accept an invitation: create the `active` relationship, and reconcile with
-   the pending status this phase already models.
-5. `DELETE`/`PATCH` on a member — revoke rather than delete, so care history
-   keeps its author.
-6. Mobile: care-circle screen, invite form, accept-invitation flow.
+- **Care events.** Inviting and joining are `MEMBER_INVITED` and `MEMBER_JOINED`
+  under docs/04, but the event infrastructure belongs to Phase 7 and the Phase 3
+  brief is explicit that no parallel event system should be built. The
+  invitation and membership tables already record who did what and when, so the
+  events can be introduced without a data migration.
+- **Invitation delivery.** The token is displayed to the inviter to pass on by
+  hand. Emailing it belongs with the notification work in Phase 8.
+- **Senior selection** (carried over from Phase 2). `selectedSeniorId` exists in
+  the Zustand store and onboarding writes to it, but nothing reads it. It
+  becomes load-bearing with the professional caregiver dashboard in Phase 9.
+
+## Next Tasks (Phase 4 — tasks)
+
+Not started. Per the Phase 3 brief, work stops here pending Phase 4
+instructions.
 
 ## Running It
 
