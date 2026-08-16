@@ -1,9 +1,14 @@
 name: CI
 
+# Paused while GitHub Actions is unavailable on this account: every run failed
+# within seconds on billing, so pushes and pull requests carried a red mark that
+# said nothing about the code. Verification is local in the meantime — see
+# docs/IMPLEMENTATION_STATUS.md for the commands each phase is checked with.
+#
+# To switch it back on, restore the push and pull_request triggers below. The
+# jobs themselves are unchanged and need no other edit.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

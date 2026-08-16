@@ -1,10 +1,31 @@
 # Implementation Status
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 
 ## Current Phase
 
-**Phase 3 — Care Circle & Invitations: complete.** Next up is Phase 4 (tasks).
+**Phase 3 — Care Circle & Invitations: complete and merged to `main`.** Next up
+is Phase 4 (tasks).
+
+## Verification Is Local
+
+GitHub Actions is unavailable on this account — every run failed on billing
+within seconds of starting. The workflow is paused (`workflow_dispatch` only in
+`.github/workflows/ci.yml`) so those failures stop marking healthy commits red,
+and each phase is verified locally instead:
+
+```bash
+cd apps/api && gofmt -l . && go vet ./... && go test -race -count=1 ./...
+cd apps/mobile && npx tsc --noEmit && pnpm lint && pnpm test
+pnpm format:check
+```
+
+Migrations are additionally applied to a brand-new database once per phase, with
+the integration suite re-run against it, because a migration that only ever runs
+on an existing database can hide an ordering mistake.
+
+Restoring CI means putting the `push` and `pull_request` triggers back; the jobs
+themselves are unchanged and cover the same ground as the commands above.
 
 ## Repository State
 
