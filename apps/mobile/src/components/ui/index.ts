@@ -1,6 +1,7 @@
 export { Button, type ButtonProps, type ButtonVariant } from './button';
 export { Card } from './card';
 export { OptionCard, type OptionCardProps } from './option-card';
+export { PermissionToggle, type PermissionToggleProps } from './permission-toggle';
 export { Screen, type ScreenProps } from './screen';
 export { Text, type TextProps } from './text';
 export { TextField, type TextFieldProps } from './text-field';
