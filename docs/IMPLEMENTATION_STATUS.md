@@ -23,7 +23,8 @@ Migrations are additionally applied to a brand-new database once per phase, with
 the integration suite re-run against it, because a migration that only ever runs
 on an existing database can hide an ordering mistake.
 
-`TEST_DATABASE_URL` must point at localhost. The suite truncates every
+`TEST_DATABASE_URL` is read from `apps/api/.env` (an inline value or a real
+environment variable still wins), and must point at localhost. The suite truncates every
 application table on every test, so aimed at the hosted Supabase project it
 would erase real care records — silently, with nothing to notice until
 afterwards. `testsupport.RequireLocalHost` refuses anything else before a
@@ -611,6 +612,6 @@ cp apps/mobile/.env.example apps/mobile/.env
 pnpm mobile
 
 # Checks
-pnpm api:test                    # add TEST_DATABASE_URL for integration tests
+pnpm api:test                    # integration tests included via apps/api/.env
 pnpm typecheck && pnpm test
 ```

@@ -28,6 +28,8 @@ const DatabaseURLEnv = "TEST_DATABASE_URL"
 func RequireDatabase(t *testing.T) *database.Pool {
 	t.Helper()
 
+	loadDotEnv(t)
+
 	url := os.Getenv(DatabaseURLEnv)
 	if url == "" {
 		t.Skipf("set %s to run integration tests (see docker-compose.yml)", DatabaseURLEnv)
