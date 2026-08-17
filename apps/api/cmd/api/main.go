@@ -12,6 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	// Embeds the IANA timezone database in the binary. Care is scheduled in
+	// each senior's own timezone, and a minimal container image ships no
+	// tzdata — without this every zone would silently resolve to UTC and put
+	// their tasks at the wrong hour.
+	_ "time/tzdata"
+
 	"github.com/meracare/api/internal/auth"
 	"github.com/meracare/api/internal/config"
 	"github.com/meracare/api/internal/database"

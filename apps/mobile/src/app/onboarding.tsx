@@ -48,7 +48,14 @@ export default function OnboardingScreen() {
   const fieldErrors = validationDetails(createSenior.error);
 
   async function handleSubmit() {
-    const created = await createSenior.mutateAsync({ mode, displayName: displayName.trim() });
+    const created = await createSenior.mutateAsync({
+      mode,
+      displayName: displayName.trim(),
+      // The device's timezone is the best first guess at the senior's own, and
+      // it decides when their day starts. It is editable on the profile
+      // afterwards, for a senior who lives somewhere else.
+      timezone: deviceTimezone(),
+    });
     setSelectedSeniorId(created.id);
     router.replace('/home');
   }
@@ -103,6 +110,20 @@ export default function OnboardingScreen() {
       </Card>
     </Screen>
   );
+}
+
+/**
+ * The device's IANA timezone.
+ *
+ * Falls back to UTC on a platform that cannot report one, which matches the
+ * column default rather than guessing.
+ */
+function deviceTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
 }
 
 /** Field-level messages from a VALIDATION_FAILED response, if any. */

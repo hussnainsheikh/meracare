@@ -29,8 +29,38 @@ type Senior struct {
 	Address          string
 	EmergencyContact string
 
+	// Timezone is an IANA name such as "Asia/Karachi". It decides when this
+	// senior's day begins and ends, and so when their care is due.
+	Timezone string
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// DefaultTimezone is used when a profile has never been given one.
+const DefaultTimezone = "UTC"
+
+// Location resolves the senior's timezone.
+//
+// An unresolvable name falls back to UTC rather than failing the request:
+// timezones are validated before they are stored, so reaching the fallback
+// means the tzdata on this machine is older than the name, and showing care at
+// the wrong hour is better than showing none at all.
+func (s Senior) Location() *time.Location {
+	if strings.TrimSpace(s.Timezone) == "" {
+		return time.UTC
+	}
+	location, err := time.LoadLocation(s.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return location
+}
+
+// ValidTimezone reports whether the name resolves on this machine.
+func ValidTimezone(name string) bool {
+	_, err := time.LoadLocation(strings.TrimSpace(name))
+	return err == nil
 }
 
 // Response is the JSON representation of a senior profile.
@@ -42,6 +72,9 @@ type Response struct {
 	Phone            *string `json:"phone"`
 	Address          *string `json:"address"`
 	EmergencyContact *string `json:"emergencyContact"`
+	// Timezone tells the client which zone to render due times in, so a family
+	// member abroad sees their relative's schedule in the relative's day.
+	Timezone string `json:"timezone"`
 	// IsSelf marks the profile as the caller's own, which is what the mobile
 	// app uses to present Solo Mode rather than a caregiver view.
 	IsSelf bool `json:"isSelf"`
@@ -72,6 +105,7 @@ func ToResponse(senior Senior, relationship relationships.Relationship) Response
 		Phone:            optionalString(senior.Phone),
 		Address:          optionalString(senior.Address),
 		EmergencyContact: optionalString(senior.EmergencyContact),
+		Timezone:         senior.Timezone,
 		IsSelf:           senior.UserID.Valid && senior.UserID.UUID == relationship.UserID,
 		Role:             string(relationship.Role),
 		Permissions:      relationship.Permissions.Strings(),

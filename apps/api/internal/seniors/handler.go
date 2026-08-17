@@ -41,6 +41,7 @@ func NewHandler(service *Service, guard *authz.Guard) *Handler {
 type SubRoutes struct {
 	Members     chi.Router
 	Invitations chi.Router
+	Tasks       chi.Router
 }
 
 // Routes mounts the senior endpoints. The caller applies authentication; each
@@ -60,6 +61,9 @@ func (h *Handler) Routes(sub SubRoutes) chi.Router {
 		}
 		if sub.Invitations != nil {
 			senior.Mount("/invitations", sub.Invitations)
+		}
+		if sub.Tasks != nil {
+			senior.Mount("/tasks", sub.Tasks)
 		}
 	})
 
@@ -95,6 +99,9 @@ type createRequest struct {
 	Phone            *string `json:"phone"`
 	Address          *string `json:"address"`
 	EmergencyContact *string `json:"emergencyContact"`
+	// Timezone is an IANA name. Omitted means UTC, which the client should
+	// avoid by sending the device's zone at sign-up.
+	Timezone *string `json:"timezone"`
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +128,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	validateOptional(&errs, "phone", body.Phone, maxPhoneLength)
 	validateOptional(&errs, "address", body.Address, maxAddressLength)
 	validateOptional(&errs, "emergencyContact", body.EmergencyContact, maxEmergencyContactLength)
+	timezone := validateTimezone(&errs, body.Timezone)
 
 	if errs.Any() {
 		httpx.WriteError(w, r, httpx.ErrValidation("Please check the highlighted fields.", errs))
@@ -134,6 +142,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Phone:            derefOrEmpty(body.Phone),
 		Address:          derefOrEmpty(body.Address),
 		EmergencyContact: derefOrEmpty(body.EmergencyContact),
+		Timezone:         timezone,
 	})
 	if err != nil {
 		if isSelfProfileConflict(err) {
@@ -167,6 +176,7 @@ type updateRequest struct {
 	Phone            *string `json:"phone"`
 	Address          *string `json:"address"`
 	EmergencyContact *string `json:"emergencyContact"`
+	Timezone         *string `json:"timezone"`
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
@@ -201,6 +211,12 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	validateOptional(&errs, "phone", body.Phone, maxPhoneLength)
 	validateOptional(&errs, "address", body.Address, maxAddressLength)
 	validateOptional(&errs, "emergencyContact", body.EmergencyContact, maxEmergencyContactLength)
+
+	if body.Timezone != nil {
+		if timezone := validateTimezone(&errs, body.Timezone); timezone != "" {
+			params.Timezone = &timezone
+		}
+	}
 
 	if errs.Any() {
 		httpx.WriteError(w, r, httpx.ErrValidation("Please check the highlighted fields.", errs))
@@ -241,6 +257,27 @@ func parseOptionalDate(errs *validation.Errors, value *string) *time.Time {
 		return nil
 	}
 	return &parsed
+}
+
+// validateTimezone checks an IANA name against the machine's tzdata.
+//
+// Rejected rather than silently defaulted: a zone the server cannot resolve
+// would put every one of this senior's tasks at the wrong hour, and doing that
+// quietly is worse than refusing to save the profile.
+func validateTimezone(errs *validation.Errors, value *string) string {
+	if value == nil {
+		return ""
+	}
+
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return ""
+	}
+	if !ValidTimezone(trimmed) {
+		errs.Add("timezone", "We do not recognise that timezone.")
+		return ""
+	}
+	return trimmed
 }
 
 func validateOptional(errs *validation.Errors, field string, value *string, max int) {

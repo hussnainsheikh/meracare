@@ -67,6 +67,7 @@ type CreateInput struct {
 	Phone            string
 	Address          string
 	EmergencyContact string
+	Timezone         string
 }
 
 // Create makes a senior profile and the creator's membership atomically.
@@ -98,6 +99,7 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, input Cr
 		Phone:            input.Phone,
 		Address:          input.Address,
 		EmergencyContact: input.EmergencyContact,
+		Timezone:         input.Timezone,
 	})
 	if err != nil {
 		return Membership{}, err

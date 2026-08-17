@@ -4,8 +4,7 @@ Last updated: 2026-08-16
 
 ## Current Phase
 
-**Phase 3 — Care Circle & Invitations: complete and merged to `main`.** Next up
-is Phase 4 (tasks).
+**Phase 4 — Tasks & Daily Care: complete.** Next up is Phase 5.
 
 ## Verification Is Local
 
@@ -43,6 +42,7 @@ apps/
         migrations/        0001_init, 0002_seniors_and_relationships, 0003_invitations
       invitations/         tokens, lifecycle, accept; /v1/invitations
       members/             care-circle membership; /v1/seniors/{id}/members
+      tasks/               care tasks, recurrence, completion; /v1/tasks
       relationships/       care relationship model and repository
       seniors/             senior profiles, /v1/seniors
       server/              router wiring, health/readiness
@@ -60,6 +60,8 @@ apps/
                            Text, TextField
       features/auth/       session restore, sign in/up/out
       features/circle/     members, invitations, accept
+      features/tasks/      task queries, mutations, offline replay
+      lib/offline/         expo-sqlite cache and sync queue
       features/profile/    /v1/me query + mutation
       features/seniors/    senior queries and mutations
       lib/                 env, supabase, secure storage, api client, query client
@@ -164,6 +166,38 @@ docker-compose.yml         local PostgreSQL for development and tests
 - The invitation token never appeared in the server log; the path was recorded
   as `/v1/invitations/[redacted]/accept`.
 - Mobile: `tsc --noEmit` clean, `expo lint` clean, 34 Jest tests pass.
+
+## Completed — Phase 4
+
+| Area | Where |
+|------|-------|
+| Task domain | `internal/tasks/task.go` — statuses, transitions, derived overdue |
+| Recurrence | `internal/tasks/recurrence.go` — RRULE subset, timezone-aware expansion |
+| Task API | `GET/POST /v1/seniors/{id}/tasks`, `GET/PATCH/DELETE /v1/tasks/{id}` |
+| Complete / skip | `POST /v1/tasks/{id}/complete`, `POST /v1/tasks/{id}/skip` |
+| Recurring routines | `GET/PATCH /v1/seniors/{id}/tasks/templates/{id}` |
+| Assigned to me | `GET /v1/tasks` — across every circle the caller belongs to |
+| Senior timezone | `senior_profiles.timezone`, validated against tzdata |
+| Database | migration `0004_care_tasks` |
+| Offline | `src/lib/offline/` — SQLite cache and mutation queue |
+| Mobile | today/upcoming/missed list, create flow, task detail, home "yours to do" |
+
+### Verified end to end
+
+- `go test -race -count=1 ./...` green across 16 packages.
+- Migrations applied to a brand-new database, then the full suite re-run
+  against it.
+- The authorization matrix is automated rather than checked by hand: an
+  intruder gets 404 on reading, editing, completing, skipping, cancelling and
+  listing tasks; a caregiver with `tasks.complete` but not `tasks.manage` may
+  complete but gets 404 on create, edit and cancel; `tasks.view` alone gets 404
+  on complete and skip; a task in another circle is unreachable by ID.
+- Completing twice over HTTP succeeds both times with an unchanged timestamp;
+  skipping an already-completed task returns `CONFLICT` and the completion
+  stands.
+- An overdue task reports `overdue` while its stored status is still `pending`.
+- The stored recurrence rule never appears in a response body.
+- Mobile: `tsc --noEmit` clean, `expo lint` clean, 75 Jest tests pass.
 
 ## Architectural Decisions Taken in Phase 1
 
@@ -316,6 +350,72 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
 - Phase 9 — dashboards; Phase 10 — messaging
 - Phase 11 — offline (`expo-sqlite`, sync queue); Phase 12 — quality
 
+## Architectural Decisions Taken in Phase 4
+
+1. **`overdue` is derived, never stored.** docs/03 lists it among the instance
+   statuses, but a task is overdue exactly when its due time has passed and
+   nobody has acted on it — a reading of the clock, not a state anybody moves it
+   into. Storing it would mean the data is only true if a background job has
+   run, and wrong whenever that job is behind. The database CHECK constraint
+   deliberately does not accept the value.
+
+2. **A one-time task is an instance with no template.** docs/03 defines a
+   template as the rule for a *recurring* task, so a task that happens once has
+   no rule to describe. One table answers "what is due today" either way.
+
+3. **Occurrences carry their own title and description.** Renaming a routine
+   must not rewrite what somebody already did, so the wording is copied at
+   materialisation. This is what makes §18's history guarantee structural rather
+   than a rule the code has to remember.
+
+4. **Occurrences are materialised on read, for the window being read.** The
+   alternative is a scheduler that must be running for the data to be correct,
+   and a care schedule that silently stops when a job dies is worse than one
+   that costs an insert to look at. A unique constraint on
+   `(template_id, scheduled_for)` makes the write idempotent and safe under
+   concurrent readers. Generation starts no earlier than the template's own
+   creation, so asking for last month cannot invent a month of missed care.
+
+5. **Editing a routine discards only future, untouched occurrences.** Anything
+   completed, skipped, cancelled, or already due is left exactly as it was.
+
+6. **Idempotency comes from the state machine, not a key table.** Completing an
+   already-completed task returns the existing record unchanged; completing a
+   *skipped* one is refused with `CONFLICT`. That satisfies both §27 and §28
+   without a separate idempotency store, because the operation is already
+   idempotent in the domain. The client still sends an `Idempotency-Key`, which
+   a later phase can use if a non-idempotent mutation appears.
+
+7. **A repeat of an action keeps the original actor and timestamp.** The retry
+   must not re-attribute care to whoever's phone happened to reconnect first.
+
+8. **Recurrence is stored as an RRULE subset** (`FREQ=DAILY`,
+   `FREQ=WEEKLY;BYDAY=MO,WE,FR`) and parsed strictly. A subset of a standard
+   rather than an invention, with somewhere to put monthly rules later. It is
+   never sent to a client: the API returns `{frequency, weekdays}` and the app
+   turns that into "Every weekday".
+
+9. **The senior has a timezone; it decides when their day is.** Added to
+   `senior_profiles` and validated against tzdata at write time. Recurrence
+   walks local calendar dates rather than adding 24 hours, so a task due at
+   09:00 stays at 09:00 across a daylight-saving change. `time/tzdata` is
+   embedded in the binary so a minimal container image cannot silently reduce
+   every zone to UTC.
+
+10. **Completing a task does not require being its assignee.** docs/02 says a
+    caregiver may "complete assigned tasks", but care given by whoever was
+    present is still care given, and the record names who actually did it.
+    `tasks.complete` is the check; assignment is a statement of intent.
+
+11. **The offline queue is task-shaped, not general.** It carries the two
+    mutations Phase 4 needs in the record shape docs/07 specifies. The replay
+    decision — which failures are transient and which are final — is separated
+    from the storage so it can be tested without the native module.
+
+12. **A failed replay is kept, marked failed, not deleted.** An action the
+    server will never accept has to be surfaced to somebody rather than
+    disappearing.
+
 ## Deferred, and why
 
 - **Care events.** Inviting and joining are `MEMBER_INVITED` and `MEMBER_JOINED`
@@ -328,10 +428,24 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
 - **Senior selection** (carried over from Phase 2). `selectedSeniorId` exists in
   the Zustand store and onboarding writes to it, but nothing reads it. It
   becomes load-bearing with the professional caregiver dashboard in Phase 9.
+- **Task care events** (Phase 4). `TASK_COMPLETED` and `TASK_MISSED` belong to
+  the Phase 7 timeline, and the Phase 4 brief forbids a parallel event system.
+  Every fact those events need is already recorded on the occurrence — actor,
+  timestamp, task, senior, and resulting state — so they can be introduced
+  without a data migration.
+- **Task reminders** (Phase 4). Scheduling metadata is in place (`due_time` plus
+  the senior's timezone), but notifications belong to Phase 8. Nothing polls and
+  no timer runs: the queue drains on app foreground, which is an event.
+- **Date and time pickers** (Phase 4). The create flow takes `YYYY-MM-DD` and
+  `HH:MM` in text fields. Native pickers are a usability requirement for an
+  older adult and are worth doing properly rather than hurriedly; the API
+  contract does not change when they arrive.
+- **Offline for the rest of the app.** Only tasks are cached and queued, as the
+  brief directs. Phase 11 generalises it.
 
-## Next Tasks (Phase 4 — tasks)
+## Next Tasks (Phase 5 — medication)
 
-Not started. Per the Phase 3 brief, work stops here pending Phase 4
+Not started. Per the Phase 4 brief, work stops here pending Phase 5
 instructions.
 
 ## Running It

@@ -45,15 +45,57 @@ func RequireDatabase(t *testing.T) *database.Pool {
 	if err := database.Migrate(ctx, pool, logging.New(io.Discard, logging.Options{Level: "error"})); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
+
+	lock(ctx, t, pool)
 	truncate(ctx, t, pool)
 
 	return pool
+}
+
+// exclusiveLockKey is an arbitrary constant identifying the test database lock.
+const exclusiveLockKey = 4726_2026
+
+// lock gives one test exclusive use of the database until it finishes.
+//
+// `go test ./...` runs packages in parallel, and every package that uses the
+// database truncates the same tables. Without this, one package's TRUNCATE
+// deletes the users another package is midway through building on, which
+// surfaces as a foreign-key violation in a test that has nothing wrong with it.
+//
+// A PostgreSQL advisory lock serialises them with no flag for anybody to
+// remember: `go test ./...` is correct on its own, which `-p 1` would not be.
+// The lock is session-scoped, so it must be taken and released on one pinned
+// connection rather than anywhere in the pool.
+func lock(ctx context.Context, t *testing.T, pool *database.Pool) {
+	t.Helper()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire test database lock connection: %v", err)
+	}
+
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", exclusiveLockKey); err != nil {
+		conn.Release()
+		t.Fatalf("lock test database: %v", err)
+	}
+
+	t.Cleanup(func() {
+		// Best effort: the connection is released either way, and a session
+		// that ends drops its advisory locks regardless.
+		unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, _ = conn.Exec(unlockCtx, "SELECT pg_advisory_unlock($1)", exclusiveLockKey)
+		conn.Release()
+	})
 }
 
 // applicationTables is every table holding application data, listed explicitly
 // so a new table added in a later phase is a deliberate decision here rather
 // than silently leaking rows between tests.
 var applicationTables = []string{
+	"care_task_instances",
+	"care_task_templates",
 	"invitations",
 	"care_relationships",
 	"senior_profiles",
