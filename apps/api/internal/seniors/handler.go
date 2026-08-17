@@ -39,10 +39,11 @@ func NewHandler(service *Service, guard *authz.Guard) *Handler {
 // shares one `{seniorID}` parameter and the guard reads the same value whatever
 // the resource.
 type SubRoutes struct {
-	Members     chi.Router
-	Invitations chi.Router
-	Tasks       chi.Router
-	Medications chi.Router
+	Members      chi.Router
+	Invitations  chi.Router
+	Tasks        chi.Router
+	Medications  chi.Router
+	Appointments chi.Router
 }
 
 // Routes mounts the senior endpoints. The caller applies authentication; each
@@ -68,6 +69,9 @@ func (h *Handler) Routes(sub SubRoutes) chi.Router {
 		}
 		if sub.Medications != nil {
 			senior.Mount("/medications", sub.Medications)
+		}
+		if sub.Appointments != nil {
+			senior.Mount("/appointments", sub.Appointments)
 		}
 	})
 

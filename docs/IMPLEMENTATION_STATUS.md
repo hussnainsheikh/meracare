@@ -4,7 +4,7 @@ Last updated: 2026-08-17
 
 ## Current Phase
 
-**Phase 5 — Medication Management: complete.** Next up is Phase 6.
+**Phase 6 — Appointments & Care Schedule: complete.** Next up is Phase 7.
 
 ## Verification Is Local
 
@@ -43,15 +43,17 @@ apps/
     cmd/api/               HTTP server entrypoint
     cmd/migrate/           migration CLI (up | status)
     internal/
+      appointments/        visits, cancel/complete; /v1/appointments
       auth/                Supabase JWT verification, Principal, RequireAuth
       authz/               relationship-based authorization middleware + guard
       care/                roles, permissions, statuses, defaults, delegation
       config/              environment configuration
       database/            pgx pool, embedded migrations + runner, error helpers
-        migrations/        0001_init … 0005_medications
+        migrations/        0001_init … 0006_appointments
       invitations/         tokens, lifecycle, accept; /v1/invitations
       medications/         medicines, schedules, doses; /v1/medications
       members/             care-circle membership; /v1/seniors/{id}/members
+      paging/              shared keyset cursor for every paged history
       recurrence/          shared RRULE subset and timezone-aware expansion
       tasks/               care tasks, completion; /v1/tasks
       relationships/       care relationship model and repository
@@ -66,9 +68,12 @@ apps/
   mobile/                  Expo SDK 57 / React Native 0.86 / Expo Router
     src/
       app/                 index, sign-in, home, onboarding, seniors/[id]/*,
-                           medications/[id]/*, tasks/[id], invitations/[token]
-      components/ui/       Button, Card, MedicationCard, OptionCard,
-                           PermissionToggle, Screen, TaskCard, Text, TextField
+                           appointments/[id]/*, medications/[id]/*, tasks/[id],
+                           invitations/[token]
+      components/ui/       AppointmentCard, Button, Card, MedicationCard,
+                           OptionCard, PermissionToggle, Screen, TaskCard, Text,
+                           TextField
+      features/appointments/ appointment queries and mutations
       features/auth/       session restore, sign in/up/out
       features/circle/     members, invitations, accept
       features/medications/ medication queries, mutations, offline replay
@@ -256,6 +261,55 @@ docker-compose.yml         local PostgreSQL for development and tests
 - The stored recurrence rule never appears in a response body.
 - Mobile: `tsc --noEmit` clean, 117 Jest tests pass, Prettier clean.
 
+## Completed — Phase 6
+
+| Area | Where |
+|------|-------|
+| Appointment domain | `internal/appointments/appointment.go` — statuses, kinds, transitions |
+| Appointment API | `GET/POST /v1/seniors/{id}/appointments`, `GET/PATCH /v1/appointments/{id}` |
+| Views | `?scope=upcoming` (default), `today`, `past` — one endpoint, one envelope |
+| Cancel / complete | `POST /v1/appointments/{id}/cancel` and `/complete` |
+| History | `?scope=past&cursor=` — keyset paged, newest first |
+| Assignment | `assignedUserId`, validated against active circle membership |
+| Database | migration `0006_appointments` |
+| Shared paging | `internal/paging` — extracted from Phase 5, used by both histories |
+| Offline | upcoming appointments cached to SQLite for reading; no queued mutations |
+| Mobile | upcoming/today/past lists, create, detail with cancel and complete, edit |
+
+### Verified end to end
+
+- `go test -race -count=1 ./...` green across 19 packages.
+- All six migrations applied to a brand-new database, then the whole suite
+  re-run against it.
+- The authorization matrix is automated: a stranger gets the same 404 for an
+  appointment that exists and one that does not, so the refusal never reveals
+  that another family's relative has a hospital visit; a member with
+  `appointments.view` alone gets 404 on create, edit, cancel and complete, and
+  the appointment is verified unchanged afterwards; a revoked member loses both
+  read and list access immediately.
+- The creator comes from the session: a body naming `createdBy` is refused
+  outright (400, unknown field), and the stored creator is the caller.
+- Cancelling twice over HTTP succeeds both times, keeps the first actor and the
+  first timestamp, and completing an already-cancelled appointment returns
+  `CONFLICT` — so the outcome recorded first stands.
+- Editing an appointment that has been completed or cancelled returns
+  `CONFLICT` and the stored row is verified untouched.
+- An edit that only moves the time is verified to leave the title, provider,
+  location, notes and creator exactly as they were.
+- Moving an appointment past its own previous end time succeeds: the end is
+  checked against the start the appointment will have, not the one it is being
+  moved away from.
+- "Today" is the senior's own day: appointments ten minutes after and ten
+  minutes before midnight in `Asia/Karachi` are both inside it, and the ones ten
+  minutes outside are not.
+- The history cursor walks five appointments — two sharing an instant — in pages
+  of two, and every one appears exactly once.
+- The database refuses an appointment that ends before it starts, one with a
+  blank title, and one with an unrecognised kind.
+- A cancelled appointment stays in both the upcoming list and the history.
+- Mobile: `tsc --noEmit` clean, `expo lint` clean, 150 Jest tests pass across 16
+  suites, Prettier clean.
+
 ## Architectural Decisions Taken in Phase 1
 
 These are implementation choices within the locked architecture — nothing in
@@ -376,12 +430,14 @@ docs/12 or docs/17 was changed.
 
 ## Blockers
 
-1. **Supabase anon key still needed.** The project at
+1. **The real sign-in round trip is still unexercised.** The project at
    `https://axrfytnnnabjdnmwnese.supabase.co` exists and signs with an ES256
-   key, which the API loads successfully at startup. The mobile app still needs
-   `EXPO_PUBLIC_SUPABASE_ANON_KEY` before a real user can sign in, so the
-   round trip from a genuine Supabase-issued token through `/v1/me` has not yet
-   been exercised.
+   key, which the API loads successfully at startup, and
+   `EXPO_PUBLIC_SUPABASE_ANON_KEY` is now set in `apps/mobile/.env`. What has
+   still never been run is the round trip itself: a genuine Supabase-issued
+   token resolving through `/v1/me` to an application user. Every test to date
+   substitutes a stub verifier for Supabase, so the seam between them is the one
+   part of authentication nothing has proved.
 2. **Brand assets are still the Expo template placeholders.** `assets/images`
    holds the generated icon/splash. Real MeraCare icon, splash, and the first
    unDraw/Storyset illustrations are needed, along with `ASSET_LICENSES.md`
@@ -544,6 +600,97 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
     prescription. This is enforced per relationship, not per role, and the
     automated matrix pins it.
 
+## Architectural Decisions Taken in Phase 6
+
+1. **An appointment is its own domain, not a task with a location.** They share
+   a shape — a time and an outcome — and nothing else. A task is a routine the
+   circle repeats and generates occurrences from; an appointment is already the
+   concrete thing, booked once, at a place, with a provider. Modelling one as
+   the other would mean either giving appointments a recurrence engine they have
+   no use for, or asking a task to carry a provider it has no meaning for.
+
+2. **No derived status, deliberately unlike tasks and medication.** A task has
+   `overdue` and a dose has `missed`, both computed from the clock. An
+   appointment has neither. A dose whose hour has passed really has been missed;
+   an appointment whose hour has passed has not become anything — nobody knows
+   whether the person went until somebody says so. Inventing "missed" here would
+   be the app asserting care it cannot observe. Upcoming and past are read from
+   `scheduled_at` against the clock, which is a question about the calendar
+   rather than about the appointment.
+
+3. **The status vocabulary is exactly `scheduled`, `completed`, `cancelled`.**
+   docs/03 names these three; the CHECK constraint mirrors them and a unit test
+   pins that `missed`, `overdue`, `past` and `pending` are all unrecognised.
+
+4. **Whichever outcome is recorded first stands.** The state machine allows
+   `scheduled → completed` and `scheduled → cancelled`, treats a repeat of the
+   same action as a success that changes nothing, and refuses the contradiction
+   in either direction with 409. The specification only forbids
+   cancelled → completed; forbidding its mirror image falls out of the same rule
+   and is the honest reading of "the server is authoritative". The guard is a
+   conditional `UPDATE ... WHERE status = 'scheduled'`, so two devices acting at
+   once resolve in the database rather than in the application.
+
+5. **A settled appointment cannot be edited.** Once completed or cancelled it is
+   no longer a plan somebody can revise; it is the record of what happened.
+   `PATCH` answers 409 rather than silently rewriting it. The same conditional
+   `UPDATE` does the refusing, and the service re-reads the row to distinguish
+   "already settled" (409) from "no such appointment" (404).
+
+6. **Cancelling and completing require `appointments.manage`.** docs/02 defines
+   two appointment permissions and no third, and §11 of the brief is explicit
+   that the existing vocabulary is the one to use. The consequence is real and
+   intended: a professional caregiver's default permissions include
+   `appointments.view` only, so a circle that wants a visiting caregiver to
+   close off appointments grants them manage on that relationship. Inventing an
+   `appointments.record` to mirror `medications.record` was the alternative and
+   was rejected — permissions belong to the relationship, and the vocabulary is
+   documented rather than ours to extend mid-phase.
+
+7. **Both ends are instants, so midnight needs no special case.** `scheduled_at`
+   and `ends_at` are `timestamptz`; an appointment running from 23:30 to 00:30
+   is two instants and nothing else. Only "today" consults the senior's timezone,
+   to find where their day begins — which is the one place a wall clock actually
+   matters.
+
+8. **One endpoint, one envelope.** docs/05 defines
+   `GET /v1/seniors/{id}/appointments` and the brief forbids duplicate
+   endpoints, so the view is chosen by `?scope=` rather than by a second
+   `/history` route. Every scope returns `{items, nextCursor}`, with
+   `nextCursor` null for the unpaged ones, so a client reading the response
+   never has to know which kind of view it asked for.
+
+9. **The keyset cursor moved to `internal/paging`.** Appointment history pages
+   the same way medication history does, and this is the second caller. A second
+   copy of an encoder and its decoder is the kind of duplication that drifts
+   quietly, and a cursor two packages disagree about is a page of somebody
+   else's care history. `internal/medications` now aliases the shared functions,
+   so no Phase 5 behaviour changed and its suite proves it.
+
+10. **One index, not three.** `appointments (senior_id, scheduled_at, id)`
+    serves the ascending upcoming list and — read backwards — the descending
+    history, with `id` present so the keyset page stays an index scan. There is
+    deliberately no index on `status`, because nothing filters by it.
+
+11. **Every status appears in every list.** A cancelled visit stays in both the
+    upcoming list and the history. One that vanished on cancellation would look
+    like an appointment nobody had mentioned, which is the opposite of what a
+    care record is for. The UI distinguishes it three ways at once — the status
+    in words, a tone, and a faded card — so status never depends on colour.
+
+12. **Appointments are read offline and only changed online.** The upcoming list
+    is cached to SQLite, because somebody in a car on the way to a hospital
+    needs the address and that is exactly where the signal goes. No mutation is
+    queued: §23 of the brief directs against it, and there is no second queue.
+    A cancellation is optimistic with a rollback, and a lost connection rolls it
+    back like any other failure — which is honest, because nothing will send it
+    later.
+
+13. **Cancelling is two taps.** It is the one action on the detail screen that
+    cannot be undone, and a single button beside "Edit" is too easy to hit by
+    mistake. The confirmation is an inline card rather than a platform alert, so
+    it is large, readable, and behaves the same on both platforms.
+
 ## Deferred, and why
 
 - **Care events.** Inviting and joining are `MEMBER_INVITED` and `MEMBER_JOINED`
@@ -588,10 +735,31 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
   actually asks.
 - **Date and time pickers** (Phase 5, as Phase 4). The medication create and
   edit flows take `HH:MM` and `YYYY-MM-DD` in text fields, for the same reason.
+- **Appointment care events** (Phase 6). `APPOINTMENT_CREATED` belongs to the
+  Phase 7 timeline, and the Phase 6 brief forbids a parallel event system. Every
+  fact those events need is already on the row — actor, timestamp, appointment,
+  senior, and resulting state — so they can be introduced without a data
+  migration.
+- **Appointment reminders** (Phase 6). The data a later phase needs is in place:
+  the start instant, the optional end, the senior's timezone, and the assignee
+  who would be notified. Nothing polls and no timer runs.
+- **Date and time pickers** (Phase 6, as Phases 4 and 5). The appointment create
+  and edit flows take `YYYY-MM-DD` and `HH:MM` in text fields. §18 asks for
+  pickers and also for existing project patterns; introducing a third way to
+  enter a time in one domain while the other two use text fields would be worse
+  than the shortcoming it fixed. When pickers land they land everywhere, and the
+  API contract does not change.
+- **Recurring appointments** (Phase 6). Nothing in the MVP documentation asks
+  for them, and `internal/recurrence` is already shared and ready if a later
+  phase does. Weekly physiotherapy is currently several appointments, which is
+  also how a clinic books it.
+- **Appointment conflict detection** (Phase 6). Nothing warns that two
+  appointments overlap. It is a real convenience and no part of the brief; it
+  needs a product decision about whether overlapping is an error or a fact.
 
-## Next Tasks (Phase 6 — appointments)
+## Next Tasks (Phase 7 — care events and activity timeline)
 
-Not started. Per the Phase 5 brief, work stops here pending Phase 6
+Not started. Per the Phase 6 brief, work stops here pending Phase 7
 instructions.
 
 ## Running It

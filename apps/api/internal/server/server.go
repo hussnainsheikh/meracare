@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/meracare/api/internal/appointments"
 	"github.com/meracare/api/internal/auth"
 	"github.com/meracare/api/internal/authz"
 	"github.com/meracare/api/internal/config"
@@ -66,6 +67,13 @@ func New(deps Dependencies) http.Handler {
 		guard,
 	)
 
+	appointmentHandler := appointments.NewHandler(
+		appointments.NewService(
+			appointments.NewRepository(deps.Pool), seniorRepo, relationshipRepo,
+		),
+		guard,
+	)
+
 	router := chi.NewRouter()
 	router.NotFound(httpx.NotFoundHandler())
 	router.MethodNotAllowed(httpx.MethodNotAllowedHandler())
@@ -92,11 +100,13 @@ func New(deps Dependencies) http.Handler {
 		v1.Mount("/me", userHandler.Routes())
 		v1.Mount("/tasks", taskHandler.TaskRoutes())
 		v1.Mount("/medications", medicationHandler.MedicationRoutes())
+		v1.Mount("/appointments", appointmentHandler.AppointmentRoutes())
 		v1.Mount("/seniors", seniorHandler.Routes(seniors.SubRoutes{
-			Members:     memberHandler.Routes(),
-			Invitations: invitationHandler.SeniorRoutes(),
-			Tasks:       taskHandler.SeniorRoutes(),
-			Medications: medicationHandler.SeniorRoutes(),
+			Members:      memberHandler.Routes(),
+			Invitations:  invitationHandler.SeniorRoutes(),
+			Tasks:        taskHandler.SeniorRoutes(),
+			Medications:  medicationHandler.SeniorRoutes(),
+			Appointments: appointmentHandler.SeniorRoutes(),
 		}))
 	})
 

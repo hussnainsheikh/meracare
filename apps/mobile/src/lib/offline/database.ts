@@ -1,4 +1,4 @@
-import type { CareTask, MedicationDose } from '@meracare/contracts';
+import type { Appointment, CareTask, MedicationDose } from '@meracare/contracts';
 import * as SQLite from 'expo-sqlite';
 
 import type { SyncEntityType, SyncOperation, SyncStatus, SyncStore } from './sync-queue';
@@ -45,6 +45,17 @@ export async function openDatabase(): Promise<SQLite.SQLiteDatabase> {
 
     CREATE INDEX IF NOT EXISTS cached_medication_doses_senior_idx
       ON cached_medication_doses (senior_id, scheduled_for);
+
+    CREATE TABLE IF NOT EXISTS cached_appointments (
+      id           TEXT PRIMARY KEY NOT NULL,
+      senior_id    TEXT NOT NULL,
+      scheduled_at TEXT NOT NULL,
+      payload      TEXT NOT NULL,
+      cached_at    TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS cached_appointments_senior_idx
+      ON cached_appointments (senior_id, scheduled_at);
 
     CREATE TABLE IF NOT EXISTS sync_queue (
       operation_id   TEXT PRIMARY KEY NOT NULL,
@@ -244,10 +255,58 @@ export async function cachedDoses(seniorId: string): Promise<MedicationDose[]> {
   return rows.map((row) => JSON.parse(row.payload) as MedicationDose);
 }
 
+/**
+ * Caches a senior's upcoming appointments, so the list is readable with no
+ * connection.
+ *
+ * The one appointment view worth keeping locally: somebody in a car on the way
+ * to a hospital needs the address, and that is exactly where the signal goes.
+ * Nothing here is ever written back — appointments are read offline and only
+ * changed online (plans/phase6.md §23).
+ */
+export async function cacheAppointments(
+  seniorId: string,
+  appointments: Appointment[],
+): Promise<void> {
+  const database = await openDatabase();
+  const cachedAt = new Date().toISOString();
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(`DELETE FROM cached_appointments WHERE senior_id = ?`, seniorId);
+
+    for (const appointment of appointments) {
+      await database.runAsync(
+        `INSERT OR REPLACE INTO cached_appointments
+           (id, senior_id, scheduled_at, payload, cached_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        appointment.id,
+        seniorId,
+        appointment.scheduledAt,
+        JSON.stringify(appointment),
+        cachedAt,
+      );
+    }
+  });
+}
+
+/** Reads the cached appointments for a senior, soonest first. */
+export async function cachedAppointments(seniorId: string): Promise<Appointment[]> {
+  const database = await openDatabase();
+  const rows = await database.getAllAsync<{ payload: string }>(
+    `SELECT payload FROM cached_appointments WHERE senior_id = ? ORDER BY scheduled_at`,
+    seniorId,
+  );
+
+  return rows.map((row) => JSON.parse(row.payload) as Appointment);
+}
+
 /** Clears everything local. Used on sign-out, so care data does not outlive the session. */
 export async function clearOfflineData(): Promise<void> {
   const database = await openDatabase();
   await database.execAsync(
-    `DELETE FROM cached_tasks; DELETE FROM cached_medication_doses; DELETE FROM sync_queue;`,
+    `DELETE FROM cached_tasks;
+     DELETE FROM cached_medication_doses;
+     DELETE FROM cached_appointments;
+     DELETE FROM sync_queue;`,
   );
 }
