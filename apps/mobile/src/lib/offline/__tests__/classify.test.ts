@@ -1,6 +1,6 @@
 import { ApiError } from '@/lib/api-error';
 
-import { classify } from '../task-sync';
+import { classify, readNotes } from '../classify';
 
 /**
  * Which failures are worth retrying.
@@ -23,7 +23,7 @@ describe('classify', () => {
 
   // The task already has a different outcome and the server is authoritative.
   // Sending the same action again could only be refused again.
-  it('gives up when the task has already been decided', () => {
+  it('gives up when the record has already been decided', () => {
     const outcome = classify(
       new ApiError(409, 'CONFLICT', 'Somebody has already recorded a different outcome.'),
     );
@@ -35,7 +35,7 @@ describe('classify', () => {
   });
 
   // The task is gone, or access was revoked while the action sat in the queue.
-  it('gives up when the task is no longer reachable', () => {
+  it('gives up when the record is no longer reachable', () => {
     expect(classify(new ApiError(404, 'NOT_FOUND', 'That task does not exist.'))).toMatchObject({
       kind: 'permanent',
     });
@@ -65,5 +65,22 @@ describe('classify', () => {
   // record of care on a failure we do not understand.
   it('retries an error it does not recognise', () => {
     expect(classify(new Error('something odd'))).toMatchObject({ kind: 'transient' });
+  });
+});
+
+describe('readNotes', () => {
+  it('reads the note a queued operation carries', () => {
+    expect(readNotes(JSON.stringify({ notes: 'She was asleep' }))).toBe('She was asleep');
+  });
+
+  it('has nothing to read when no note was recorded', () => {
+    expect(readNotes(null)).toBeNull();
+    expect(readNotes(JSON.stringify({}))).toBeNull();
+  });
+
+  // A payload that will not parse must not take the whole pass down with it:
+  // the operation still deserves to be sent, just without a note.
+  it('survives a payload it cannot read', () => {
+    expect(readNotes('not json')).toBeNull();
   });
 });

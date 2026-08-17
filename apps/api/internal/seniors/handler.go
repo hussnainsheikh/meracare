@@ -42,6 +42,7 @@ type SubRoutes struct {
 	Members     chi.Router
 	Invitations chi.Router
 	Tasks       chi.Router
+	Medications chi.Router
 }
 
 // Routes mounts the senior endpoints. The caller applies authentication; each
@@ -64,6 +65,9 @@ func (h *Handler) Routes(sub SubRoutes) chi.Router {
 		}
 		if sub.Tasks != nil {
 			senior.Mount("/tasks", sub.Tasks)
+		}
+		if sub.Medications != nil {
+			senior.Mount("/medications", sub.Medications)
 		}
 	})
 

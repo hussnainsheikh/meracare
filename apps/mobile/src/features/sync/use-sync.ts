@@ -2,17 +2,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
-import { taskKeys, syncQueuedTasks } from './use-tasks';
+import { syncQueuedOperations } from './replay';
 
 /**
  * Drains the offline queue when the app is usable again.
  *
  * Two triggers, both events rather than timers: the app coming to the
- * foreground, and mounting. plans/phase4.md §31 rules out polling and interval
- * timers, and they would be the wrong tool anyway — a queue that is empty
- * ninety-nine times out of a hundred does not want waking every few seconds.
+ * foreground, and mounting. plans/phase4.md §31 and plans/phase5.md §27 both
+ * rule out polling and interval timers, and they would be the wrong tool anyway
+ * — a queue that is empty ninety-nine times out of a hundred does not want
+ * waking every few seconds.
  */
-export function useTaskSync() {
+export function useOfflineSync() {
   const queryClient = useQueryClient();
   // Guards against two passes overlapping, which would replay the same
   // operation twice while the first is still in flight.
@@ -23,11 +24,12 @@ export function useTaskSync() {
     running.current = true;
 
     try {
-      const report = await syncQueuedTasks();
+      const report = await syncQueuedOperations();
 
       // Only disturb the cache when something actually reached the server.
       if (report.applied > 0 || report.failed.length > 0) {
-        await queryClient.invalidateQueries({ queryKey: taskKeys.all });
+        await queryClient.invalidateQueries({ queryKey: ['tasks'] });
+        await queryClient.invalidateQueries({ queryKey: ['medications'] });
         await queryClient.invalidateQueries({ queryKey: ['seniors'] });
       }
     } catch {

@@ -15,9 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/api-client';
 import { ApiError } from '@/lib/api-error';
 import { cacheTasks, cachedTasks, sqliteSyncStore } from '@/lib/offline/database';
-import { newOperation, processQueue, type SyncOperationType } from '@/lib/offline/sync-queue';
-
-import { replayTaskOperation } from './task-sync';
+import { newOperation } from '@/lib/offline/sync-queue';
 
 /**
  * Care task data.
@@ -180,7 +178,7 @@ export interface TaskActionInput {
  *   - if the request never leaves the phone, the mutation is queued and the
  *     optimistic state is kept deliberately, because the action *will* be sent.
  */
-function useTaskAction(seniorId: string, operationType: SyncOperationType) {
+function useTaskAction(seniorId: string, operationType: 'complete' | 'skip') {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -198,6 +196,7 @@ function useTaskAction(seniorId: string, operationType: SyncOperationType) {
           await sqliteSyncStore.enqueue(
             newOperation(
               operationId,
+              'task',
               taskId,
               operationType,
               notes === undefined ? null : { notes },
@@ -255,11 +254,6 @@ function useTaskAction(seniorId: string, operationType: SyncOperationType) {
 
     onSettled: () => invalidateTasks(queryClient, seniorId),
   });
-}
-
-/** Sends everything queued while offline. */
-export async function syncQueuedTasks() {
-  return processQueue(sqliteSyncStore, replayTaskOperation);
 }
 
 /**

@@ -1,10 +1,10 @@
 # Implementation Status
 
-Last updated: 2026-08-16
+Last updated: 2026-08-17
 
 ## Current Phase
 
-**Phase 4 — Tasks & Daily Care: complete.** Next up is Phase 5.
+**Phase 5 — Medication Management: complete.** Next up is Phase 6.
 
 ## Verification Is Local
 
@@ -39,10 +39,12 @@ apps/
       care/                roles, permissions, statuses, defaults, delegation
       config/              environment configuration
       database/            pgx pool, embedded migrations + runner, error helpers
-        migrations/        0001_init, 0002_seniors_and_relationships, 0003_invitations
+        migrations/        0001_init … 0005_medications
       invitations/         tokens, lifecycle, accept; /v1/invitations
+      medications/         medicines, schedules, doses; /v1/medications
       members/             care-circle membership; /v1/seniors/{id}/members
-      tasks/               care tasks, recurrence, completion; /v1/tasks
+      recurrence/          shared RRULE subset and timezone-aware expansion
+      tasks/               care tasks, completion; /v1/tasks
       relationships/       care relationship model and repository
       seniors/             senior profiles, /v1/seniors
       server/              router wiring, health/readiness
@@ -55,16 +57,19 @@ apps/
   mobile/                  Expo SDK 57 / React Native 0.86 / Expo Router
     src/
       app/                 index, sign-in, home, onboarding, seniors/[id]/*,
-                           invitations/[token]
-      components/ui/       Button, Card, OptionCard, PermissionToggle, Screen,
-                           Text, TextField
+                           medications/[id]/*, tasks/[id], invitations/[token]
+      components/ui/       Button, Card, MedicationCard, OptionCard,
+                           PermissionToggle, Screen, TaskCard, Text, TextField
       features/auth/       session restore, sign in/up/out
       features/circle/     members, invitations, accept
+      features/medications/ medication queries, mutations, offline replay
+      features/sync/       one offline queue drain across every entity
       features/tasks/      task queries, mutations, offline replay
-      lib/offline/         expo-sqlite cache and sync queue
+      lib/offline/         expo-sqlite cache, sync queue, failure classification
       features/profile/    /v1/me query + mutation
       features/seniors/    senior queries and mutations
-      lib/                 env, supabase, secure storage, api client, query client
+      lib/                 env, supabase, secure storage, api client, query
+                           client, timezone helpers
       stores/              small Zustand UI store
       theme/               semantic design tokens + ThemeProvider
 packages/
@@ -172,7 +177,7 @@ docker-compose.yml         local PostgreSQL for development and tests
 | Area | Where |
 |------|-------|
 | Task domain | `internal/tasks/task.go` — statuses, transitions, derived overdue |
-| Recurrence | `internal/tasks/recurrence.go` — RRULE subset, timezone-aware expansion |
+| Recurrence | RRULE subset, timezone-aware expansion (moved to `internal/recurrence` in Phase 5) |
 | Task API | `GET/POST /v1/seniors/{id}/tasks`, `GET/PATCH/DELETE /v1/tasks/{id}` |
 | Complete / skip | `POST /v1/tasks/{id}/complete`, `POST /v1/tasks/{id}/skip` |
 | Recurring routines | `GET/PATCH /v1/seniors/{id}/tasks/templates/{id}` |
@@ -198,6 +203,49 @@ docker-compose.yml         local PostgreSQL for development and tests
 - An overdue task reports `overdue` while its stored status is still `pending`.
 - The stored recurrence rule never appears in a response body.
 - Mobile: `tsc --noEmit` clean, `expo lint` clean, 75 Jest tests pass.
+
+## Completed — Phase 5
+
+| Area | Where |
+|------|-------|
+| Medication domain | `internal/medications/medication.go` — statuses, transitions, derived missed |
+| Schedules | one schedule per time of day; "twice a day" is two rows |
+| Medication API | `GET/POST /v1/seniors/{id}/medications`, `GET/PATCH /v1/medications/{id}` |
+| Today's medication | `GET /v1/seniors/{id}/medications/doses?scope=today\|upcoming\|missed\|window` |
+| Take / skip | `POST /v1/medications/{id}/instances/{instanceId}/take` and `/skip` |
+| Schedules API | `GET/POST /v1/medications/{id}/schedules`, `PATCH .../schedules/{id}` |
+| One-off dose | `POST /v1/medications/{id}/doses` |
+| History | `GET /v1/medications/{id}/instances` — keyset paged, newest first |
+| Database | migration `0005_medications` |
+| Shared recurrence | `internal/recurrence` — extracted from Phase 4, used by both domains |
+| Offline | medication doses share Phase 4's queue; today's doses cached to SQLite |
+| Mobile | today/upcoming/missed doses, medication list, create, detail with history, edit |
+
+### Verified end to end
+
+- `go test -race -count=1 ./...` green across 17 packages.
+- Migrations applied to a brand-new database, then the medication and task
+  suites re-run against it.
+- The authorization matrix is automated: a stranger gets 404 on reading,
+  editing, scheduling, recording and listing medication, and the refusal never
+  names the medicine; a member with `medications.view` alone gets 404 on edit,
+  schedule, take and skip; `medications.record` without `medications.manage` may
+  take a dose but gets 404 on edit; a revoked member loses access immediately; a
+  medication in another circle is unreachable by ID; a dose cannot be recorded
+  through a different medication.
+- The actor comes from the session: a body naming `takenBy` is refused outright
+  (400), and the recorded actor is the authenticated caller.
+- Taking twice over HTTP succeeds both times with an unchanged timestamp;
+  skipping an already-taken dose returns `CONFLICT` and the first outcome
+  stands.
+- A dose past its window reports `missed` while its stored status is still
+  `pending`, so it can be taken late.
+- Missed doses are found after three days with nobody opening the app — the
+  query generates the recent past before reading it.
+- Editing a dosage leaves a dose already taken saying what it said; upcoming
+  doses pick up the new value.
+- The stored recurrence rule never appears in a response body.
+- Mobile: `tsc --noEmit` clean, 117 Jest tests pass, Prettier clean.
 
 ## Architectural Decisions Taken in Phase 1
 
@@ -416,6 +464,77 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
     server will never accept has to be surfaced to somebody rather than
     disappearing.
 
+## Architectural Decisions Taken in Phase 5
+
+1. **Medication is its own domain, not a task with a label.** The tables and the
+   package are separate, as docs/03 defines them. The shapes rhyme with care
+   tasks because the same care problem recurs — a rule and the occurrences it
+   produces — but a dose is not a chore: it is named after the medicine, carries
+   its dosage into history, and one medicine can have several times of day,
+   which a task template cannot express.
+
+2. **The recurrence engine moved to `internal/recurrence`.** Medication
+   schedules need the same rule grammar, the same timezone-correct expansion and
+   the same wire shape, and a second copy of a daylight-saving-aware calendar
+   walk is exactly the kind of duplication that goes wrong quietly. Phase 4's
+   `tasks.Recurrence` and friends are now aliases, so no Phase 4 code or test
+   changed. The contracts package mirrors the split (`recurrence.ts`,
+   `datetime.ts`).
+
+3. **"Twice a day" is two schedules, not one rule with two times.** It costs a
+   row and buys the ability to stop the evening dose without touching the
+   morning one, which is a real thing families do. A partial unique index
+   prevents the same medicine being due twice at the same time under the same
+   rule, and is partial on `active` so a stopped time can be restarted later.
+
+4. **`missed` is derived, never stored.** A dose is missed exactly when its time
+   and its grace period have passed with nobody acting on it — a reading of the
+   clock, not a state anybody moves it into. The CHECK constraint does not
+   recognise it. This is the Phase 3 `EffectiveStatus` precedent, applied a
+   third time, and it means no job has to be running for the data to be true.
+
+5. **A two-hour grace period before a dose counts as missed.** A dose is not
+   missed at one minute past eight; somebody making breakfast is not late, and a
+   screen that said so would train people to ignore it. Two hours is long enough
+   to be a real window and short enough that a family checking in the same day
+   still learns something.
+
+6. **The missed query generates the recent past before reading it.** Doses are
+   written when somebody reads the window they fall in, which leaves a gap: if
+   nobody opened the app for a week, last Tuesday's dose was never written and
+   so could never be reported missed. Generating a bounded lookback (14 days)
+   before answering closes it without a background sweep.
+
+7. **A missed dose stays `pending` underneath, so it can be taken late.** That
+   is what people actually do, and the record should say so. The state machine
+   therefore has no missed-specific transition at all.
+
+8. **Doses snapshot the name and dosage they were scheduled with.** What was
+   swallowed yesterday was 500 mg, and correcting the prescription today must
+   not rewrite that. Editing a medication discards and regenerates only future
+   *pending* doses; anything already due or acted on is untouched.
+
+9. **Stopping a medicine is `active = false`, never a delete.** Its doses are
+   care history. Stopping it discards future pending doses and ends generation;
+   the medicine, its schedules and everything recorded remain readable.
+
+10. **History is keyset-paged, not offset-paged.** A medicine taken twice a day
+    for two years is fifteen hundred rows, and OFFSET makes the server count
+    past every one of them to reach a page nobody has read. The cursor is opaque
+    so clients cannot come to depend on the ordering.
+
+11. **Medication doses joined the Phase 4 offline queue rather than starting
+    one.** Two queues would replay a task completion and a dose taken a minute
+    earlier in whichever order the passes happened to run. A dose is addressed
+    through its medication, so both IDs travel in the entity ID as
+    `medicationId/doseId` — one composite key is a smaller change than a schema
+    every other entity would then carry.
+
+12. **`medications.record` is separable from `medications.manage`.** A visiting
+    caregiver can hand somebody their tablets without being able to change the
+    prescription. This is enforced per relationship, not per role, and the
+    automated matrix pins it.
+
 ## Deferred, and why
 
 - **Care events.** Inviting and joining are `MEMBER_INVITED` and `MEMBER_JOINED`
@@ -440,12 +559,30 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
   `HH:MM` in text fields. Native pickers are a usability requirement for an
   older adult and are worth doing properly rather than hurriedly; the API
   contract does not change when they arrive.
-- **Offline for the rest of the app.** Only tasks are cached and queued, as the
-  brief directs. Phase 11 generalises it.
+- **Offline for the rest of the app.** Only tasks and medication doses are
+  cached and queued, as the briefs direct. Phase 11 generalises it.
+- **Medication care events** (Phase 5). `MEDICATION_TAKEN` and
+  `MEDICATION_MISSED` belong to the Phase 7 timeline, and the Phase 5 brief
+  forbids a parallel event system. Every fact those events need is already on
+  the dose — actor, timestamp, medication, senior, and resulting state — so they
+  can be introduced without a data migration.
+- **Medication reminders** (Phase 5). The scheduling foundation is in place: the
+  senior's timezone, a schedule's wall-clock time, and `nextDoseAt` plus the
+  upcoming-doses endpoint give Phase 8 everything it needs to schedule local
+  notifications. Nothing polls and no timer runs; the queue drains on app
+  foreground, which is an event.
+- **Interval schedules ("every 12 hours")** (Phase 5). The MVP's documented
+  schedule shape is a recurrence rule plus a time of day, and twice-daily is
+  expressed as two schedules at 08:00 and 20:00 — which is what a person reads
+  off a label anyway. A true interval rule drifts relative to the calendar and
+  would need its own anchor; the RRULE subset has room for it when a phase
+  actually asks.
+- **Date and time pickers** (Phase 5, as Phase 4). The medication create and
+  edit flows take `HH:MM` and `YYYY-MM-DD` in text fields, for the same reason.
 
-## Next Tasks (Phase 5 — medication)
+## Next Tasks (Phase 6 — appointments)
 
-Not started. Per the Phase 4 brief, work stops here pending Phase 5
+Not started. Per the Phase 5 brief, work stops here pending Phase 6
 instructions.
 
 ## Running It

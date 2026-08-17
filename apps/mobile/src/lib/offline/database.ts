@@ -1,4 +1,4 @@
-import type { CareTask } from '@meracare/contracts';
+import type { CareTask, MedicationDose } from '@meracare/contracts';
 import * as SQLite from 'expo-sqlite';
 
 import type { SyncEntityType, SyncOperation, SyncStatus, SyncStore } from './sync-queue';
@@ -34,6 +34,17 @@ export async function openDatabase(): Promise<SQLite.SQLiteDatabase> {
 
     CREATE INDEX IF NOT EXISTS cached_tasks_senior_idx
       ON cached_tasks (senior_id, scheduled_for);
+
+    CREATE TABLE IF NOT EXISTS cached_medication_doses (
+      id            TEXT PRIMARY KEY NOT NULL,
+      senior_id     TEXT NOT NULL,
+      scheduled_for TEXT NOT NULL,
+      payload       TEXT NOT NULL,
+      cached_at     TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS cached_medication_doses_senior_idx
+      ON cached_medication_doses (senior_id, scheduled_for);
 
     CREATE TABLE IF NOT EXISTS sync_queue (
       operation_id   TEXT PRIMARY KEY NOT NULL,
@@ -192,8 +203,51 @@ export async function cachedTasks(seniorId: string): Promise<CareTask[]> {
   return rows.map((row) => JSON.parse(row.payload) as CareTask);
 }
 
+/**
+ * Caches today's medication for a senior, so the list is readable with no
+ * connection.
+ *
+ * docs/07 names "current medication schedules/instances" among the few things
+ * worth keeping locally, and it is the list somebody needs while standing in
+ * front of the person they care for (plans/phase5.md §20).
+ */
+export async function cacheDoses(seniorId: string, doses: MedicationDose[]): Promise<void> {
+  const database = await openDatabase();
+  const cachedAt = new Date().toISOString();
+
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(`DELETE FROM cached_medication_doses WHERE senior_id = ?`, seniorId);
+
+    for (const dose of doses) {
+      await database.runAsync(
+        `INSERT OR REPLACE INTO cached_medication_doses
+           (id, senior_id, scheduled_for, payload, cached_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        dose.id,
+        seniorId,
+        dose.scheduledFor,
+        JSON.stringify(dose),
+        cachedAt,
+      );
+    }
+  });
+}
+
+/** Reads the cached doses for a senior, earliest first. */
+export async function cachedDoses(seniorId: string): Promise<MedicationDose[]> {
+  const database = await openDatabase();
+  const rows = await database.getAllAsync<{ payload: string }>(
+    `SELECT payload FROM cached_medication_doses WHERE senior_id = ? ORDER BY scheduled_for`,
+    seniorId,
+  );
+
+  return rows.map((row) => JSON.parse(row.payload) as MedicationDose);
+}
+
 /** Clears everything local. Used on sign-out, so care data does not outlive the session. */
 export async function clearOfflineData(): Promise<void> {
   const database = await openDatabase();
-  await database.execAsync(`DELETE FROM cached_tasks; DELETE FROM sync_queue;`);
+  await database.execAsync(
+    `DELETE FROM cached_tasks; DELETE FROM cached_medication_doses; DELETE FROM sync_queue;`,
+  );
 }

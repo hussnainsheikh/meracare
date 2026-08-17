@@ -125,10 +125,28 @@ export default function SeniorDashboardScreen() {
         </Card>
       ) : null}
 
+      {can(profile, 'medications.view') ? (
+        <Card>
+          <Text variant="sectionHeading">Medication</Text>
+          <Text variant="body" color="secondary">
+            What to take today, and what has been taken.
+          </Text>
+          <Button
+            label="View medication"
+            onPress={() =>
+              router.push({
+                pathname: '/seniors/[seniorId]/medications',
+                params: { seniorId: profile.id },
+              })
+            }
+          />
+        </Card>
+      ) : null}
+
       <Card>
         <Text variant="sectionHeading">Care</Text>
         <Text variant="body" color="secondary">
-          Medications and appointments will appear here as they are added.
+          Appointments will appear here as they are added.
         </Text>
       </Card>
     </Screen>
