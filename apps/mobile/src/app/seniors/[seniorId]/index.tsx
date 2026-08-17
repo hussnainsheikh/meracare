@@ -107,10 +107,28 @@ export default function SeniorDashboardScreen() {
         </Card>
       ) : null}
 
+      {can(profile, 'tasks.view') ? (
+        <Card>
+          <Text variant="sectionHeading">Care tasks</Text>
+          <Text variant="body" color="secondary">
+            What needs doing today, and what is coming up.
+          </Text>
+          <Button
+            label="View care tasks"
+            onPress={() =>
+              router.push({
+                pathname: '/seniors/[seniorId]/tasks',
+                params: { seniorId: profile.id },
+              })
+            }
+          />
+        </Card>
+      ) : null}
+
       <Card>
         <Text variant="sectionHeading">Care</Text>
         <Text variant="body" color="secondary">
-          Tasks, medications and appointments will appear here as they are added.
+          Medications and appointments will appear here as they are added.
         </Text>
       </Card>
     </Screen>

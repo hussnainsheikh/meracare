@@ -34,6 +34,16 @@ export class ApiError extends Error {
     return this.status === 0 || this.status >= 500;
   }
 
+  /**
+   * True when the request never reached the server.
+   *
+   * Distinct from `isRetryable`: a 500 is worth retrying but the user is
+   * online, whereas this is what sends a mutation to the offline queue.
+   */
+  get isOffline(): boolean {
+    return this.status === 0;
+  }
+
   /** Builds an ApiError from a non-2xx response body. */
   static fromResponse(status: number, body: unknown): ApiError {
     if (isApiErrorBody(body)) {

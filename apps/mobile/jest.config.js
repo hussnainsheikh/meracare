@@ -7,6 +7,12 @@
 module.exports = {
   preset: 'jest-expo',
   rootDir: __dirname,
+  // Rendering a component or hook leaves a handle open that the React Native
+  // test environment never releases, so the run finishes and then hangs rather
+  // than exiting. This is about the environment, not the tests: each one still
+  // tears down the query client it created, and a genuine leak in application
+  // code would show up as a failing assertion rather than a slow exit.
+  forceExit: true,
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   testMatch: ['<rootDir>/src/**/*.test.ts', '<rootDir>/src/**/*.test.tsx'],
   transformIgnorePatterns: [

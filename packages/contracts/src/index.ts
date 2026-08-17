@@ -4,6 +4,8 @@ export * from './errors';
 export * from './pagination';
 export * from './permission-labels';
 export * from './senior';
+export * from './task';
+export * from './task-labels';
 export * from './user';
 
 /** API version prefix for every MeraCare endpoint. */

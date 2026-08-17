@@ -1,4 +1,5 @@
-import type { Senior } from '@meracare/contracts';
+import type { CareTask, Senior } from '@meracare/contracts';
+import { statusLabel, taskTimeLabel } from '@meracare/contracts';
 import { Link, Redirect, router } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
@@ -6,6 +7,8 @@ import { Button, Card, Screen, Text } from '@/components/ui';
 import { useSession } from '@/features/auth/session-provider';
 import { useAuthActions } from '@/features/auth/use-auth-actions';
 import { useSeniors } from '@/features/seniors/use-seniors';
+import { useTaskSync } from '@/features/tasks/use-task-sync';
+import { useMyTasks } from '@/features/tasks/use-tasks';
 import { ApiError } from '@/lib/api-error';
 import { useTheme } from '@/theme';
 
@@ -13,14 +16,18 @@ import { useTheme } from '@/theme';
  * Home / Today.
  *
  * One screen for every care mode: what the user sees is decided by their
- * relationships, not by a separate app (docs/13-mvp-screen-map.md). The daily
- * task, medication and appointment content arrives in later phases.
+ * relationships, not by a separate app (docs/13-mvp-screen-map.md). Medication
+ * and appointment content arrives in later phases.
  */
 export default function HomeScreen() {
   const theme = useTheme();
   const { isSignedIn, isRestoring } = useSession();
   const { signOut, isSubmitting } = useAuthActions();
   const seniors = useSeniors(isSignedIn);
+  const myTasks = useMyTasks();
+
+  // Anything recorded while offline is sent as soon as the app is usable.
+  useTaskSync();
 
   if (!isRestoring && !isSignedIn) {
     return <Redirect href="/sign-in" />;
@@ -29,6 +36,10 @@ export default function HomeScreen() {
   return (
     <Screen scrollable>
       <Text variant="pageHeading">Today</Text>
+
+      {(myTasks.data ?? []).length > 0 ? (
+        <AssignedToMe tasks={myTasks.data ?? []} seniors={seniors.data ?? []} />
+      ) : null}
 
       {seniors.isPending ? (
         <View
@@ -71,6 +82,50 @@ export default function HomeScreen() {
 
       <Button variant="ghost" label="Sign out" onPress={signOut} loading={isSubmitting} />
     </Screen>
+  );
+}
+
+/**
+ * The caller's own work, across every circle they belong to.
+ *
+ * This is what a professional caregiver opens the app for: their round, in
+ * order, without first having to pick which client they are looking at
+ * (docs/13, "Professional Home").
+ */
+function AssignedToMe({ tasks, seniors }: { tasks: CareTask[]; seniors: Senior[] }) {
+  const theme = useTheme();
+
+  // This list spans circles, so each row is read in its own senior's timezone
+  // rather than one zone for the whole screen.
+  const timezones = new Map(seniors.map((senior) => [senior.id, senior.timezone]));
+  const names = new Map(seniors.map((senior) => [senior.id, senior.displayName]));
+
+  return (
+    <Card>
+      <Text variant="sectionHeading">Yours to do</Text>
+      <View style={{ gap: theme.spacing.md }}>
+        {tasks.slice(0, 5).map((task) => (
+          <Link
+            key={task.id}
+            href={{ pathname: '/tasks/[taskId]', params: { taskId: task.id } }}
+            asChild
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${task.title}, ${statusLabel(task.status)}`}
+              style={{ gap: theme.spacing.xs, minHeight: theme.minTouchTarget }}
+            >
+              <Text variant="bodyStrong">{task.title}</Text>
+              <Text variant="secondary" color="secondary">
+                {taskTimeLabel(task, timezones.get(task.seniorId) ?? 'UTC')}
+                {names.has(task.seniorId) ? ` · ${names.get(task.seniorId)}` : ''} ·{' '}
+                {statusLabel(task.status)}
+              </Text>
+            </Pressable>
+          </Link>
+        ))}
+      </View>
+    </Card>
   );
 }
 

@@ -17,6 +17,11 @@ export interface Senior {
   phone: string | null;
   address: string | null;
   emergencyContact: string | null;
+  /**
+   * IANA timezone name. Care is scheduled in the senior's own day, so due times
+   * are rendered in this zone rather than the device's.
+   */
+  timezone: string;
   /** True when this profile represents the caller themselves (Solo Mode). */
   isSelf: boolean;
   role: CareRole;
@@ -37,6 +42,8 @@ export interface CreateSeniorRequest {
   phone?: string | null;
   address?: string | null;
   emergencyContact?: string | null;
+  /** IANA name. Send the device's zone at sign-up; omitted means UTC. */
+  timezone?: string;
 }
 
 /** `PATCH /v1/seniors/{id}` request body. Absent fields are left unchanged. */
@@ -46,6 +53,7 @@ export interface UpdateSeniorRequest {
   phone?: string | null;
   address?: string | null;
   emergencyContact?: string | null;
+  timezone?: string;
 }
 
 /** `GET /v1/seniors` response. */

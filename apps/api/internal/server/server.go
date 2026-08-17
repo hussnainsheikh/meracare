@@ -18,6 +18,7 @@ import (
 	"github.com/meracare/api/internal/members"
 	"github.com/meracare/api/internal/relationships"
 	"github.com/meracare/api/internal/seniors"
+	"github.com/meracare/api/internal/tasks"
 	"github.com/meracare/api/internal/users"
 	"github.com/meracare/api/pkg/httpx"
 )
@@ -54,6 +55,11 @@ func New(deps Dependencies) http.Handler {
 	)
 	invitationHandler := invitations.NewHandler(invitationService, guard, requireAuth)
 
+	taskHandler := tasks.NewHandler(
+		tasks.NewService(tasks.NewRepository(deps.Pool), seniorRepo, relationshipRepo),
+		guard,
+	)
+
 	router := chi.NewRouter()
 	router.NotFound(httpx.NotFoundHandler())
 	router.MethodNotAllowed(httpx.MethodNotAllowedHandler())
@@ -78,9 +84,11 @@ func New(deps Dependencies) http.Handler {
 	router.Route("/v1", func(v1 chi.Router) {
 		v1.Use(requireAuth)
 		v1.Mount("/me", userHandler.Routes())
+		v1.Mount("/tasks", taskHandler.TaskRoutes())
 		v1.Mount("/seniors", seniorHandler.Routes(seniors.SubRoutes{
 			Members:     memberHandler.Routes(),
 			Invitations: invitationHandler.SeniorRoutes(),
+			Tasks:       taskHandler.SeniorRoutes(),
 		}))
 	})
 

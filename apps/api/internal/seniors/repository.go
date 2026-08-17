@@ -29,13 +29,13 @@ func NewRepository(pool *database.Pool) *Repository {
 
 const seniorColumns = `id, user_id, created_by_user_id, display_name, date_of_birth,
 	coalesce(photo_url, ''), coalesce(phone, ''), coalesce(address, ''),
-	coalesce(emergency_contact, ''), created_at, updated_at`
+	coalesce(emergency_contact, ''), timezone, created_at, updated_at`
 
 // seniorColumnsAliased is seniorColumns qualified for the join in ListForUser.
 // Written out rather than derived, so the two lists stay obviously in step.
 const seniorColumnsAliased = `s.id, s.user_id, s.created_by_user_id, s.display_name, s.date_of_birth,
 	coalesce(s.photo_url, ''), coalesce(s.phone, ''), coalesce(s.address, ''),
-	coalesce(s.emergency_contact, ''), s.created_at, s.updated_at`
+	coalesce(s.emergency_contact, ''), s.timezone, s.created_at, s.updated_at`
 
 // CreateParams describes a new senior profile.
 type CreateParams struct {
@@ -49,6 +49,8 @@ type CreateParams struct {
 	Phone            string
 	Address          string
 	EmergencyContact string
+	// Timezone is an IANA name; empty falls back to the column default.
+	Timezone string
 }
 
 // CreateTx inserts a senior profile inside a transaction.
@@ -60,9 +62,9 @@ func (r *Repository) CreateTx(ctx context.Context, tx pgx.Tx, params CreateParam
 	senior, err := scanSenior(tx.QueryRow(ctx, `
 		INSERT INTO senior_profiles (
 			user_id, created_by_user_id, display_name, date_of_birth,
-			phone, address, emergency_contact
+			phone, address, emergency_contact, timezone
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce($8, 'UTC'))
 		RETURNING `+seniorColumns,
 		params.UserID,
 		params.CreatedByUserID,
@@ -71,6 +73,7 @@ func (r *Repository) CreateTx(ctx context.Context, tx pgx.Tx, params CreateParam
 		nullableString(params.Phone),
 		nullableString(params.Address),
 		nullableString(params.EmergencyContact),
+		nullableString(params.Timezone),
 	))
 	if err != nil {
 		return Senior{}, fmt.Errorf("create senior profile: %w", err)
@@ -147,6 +150,7 @@ type UpdateParams struct {
 	Phone            *string
 	Address          *string
 	EmergencyContact *string
+	Timezone         *string
 }
 
 // Update applies the supplied changes and returns the stored profile.
@@ -157,7 +161,8 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, params UpdatePara
 			date_of_birth     = CASE WHEN $3::boolean THEN $4::date ELSE date_of_birth END,
 			phone             = CASE WHEN $5::boolean THEN $6 ELSE phone END,
 			address           = CASE WHEN $7::boolean THEN $8 ELSE address END,
-			emergency_contact = CASE WHEN $9::boolean THEN $10 ELSE emergency_contact END
+			emergency_contact = CASE WHEN $9::boolean THEN $10 ELSE emergency_contact END,
+			timezone          = coalesce($11, timezone)
 		WHERE id = $1
 		RETURNING `+seniorColumns,
 		id,
@@ -166,6 +171,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, params UpdatePara
 		params.Phone != nil, nullablePointer(params.Phone),
 		params.Address != nil, nullablePointer(params.Address),
 		params.EmergencyContact != nil, nullablePointer(params.EmergencyContact),
+		nullablePointer(params.Timezone),
 	))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Senior{}, ErrNotFound
@@ -201,6 +207,7 @@ func scanSenior(row rowScanner) (Senior, error) {
 		&senior.Phone,
 		&senior.Address,
 		&senior.EmergencyContact,
+		&senior.Timezone,
 		&senior.CreatedAt,
 		&senior.UpdatedAt,
 	)
@@ -231,6 +238,7 @@ func scanMembership(row rowScanner) (Membership, error) {
 		&membership.Senior.Phone,
 		&membership.Senior.Address,
 		&membership.Senior.EmergencyContact,
+		&membership.Senior.Timezone,
 		&membership.Senior.CreatedAt,
 		&membership.Senior.UpdatedAt,
 

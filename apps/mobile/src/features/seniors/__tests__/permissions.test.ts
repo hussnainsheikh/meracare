@@ -18,6 +18,7 @@ function senior(overrides: Partial<Senior>): Senior {
     phone: null,
     address: null,
     emergencyContact: null,
+    timezone: 'Asia/Karachi',
     isSelf: false,
     role: 'family_member',
     permissions: [],
