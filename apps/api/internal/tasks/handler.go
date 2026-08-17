@@ -12,6 +12,7 @@ import (
 	"github.com/meracare/api/internal/auth"
 	"github.com/meracare/api/internal/authz"
 	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/recurrence"
 	"github.com/meracare/api/pkg/httpx"
 	"github.com/meracare/api/pkg/validation"
 )
@@ -188,11 +189,11 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		errs.Add("recurrence", "A task either happens once or repeats, not both.")
 
 	case body.Recurrence != nil:
-		recurrence, err := ParseRecurrenceRequest(body.Recurrence.Frequency, body.Recurrence.Weekdays)
+		rule, err := ParseRecurrenceRequest(body.Recurrence.Frequency, body.Recurrence.Weekdays)
 		if err != nil {
-			errs.Add("recurrence", recurrenceMessage(err))
+			errs.Add("recurrence", recurrence.Message(err))
 		} else {
-			input.Recurrence = &recurrence
+			input.Recurrence = &rule
 		}
 
 		if body.DueTime == nil {
@@ -460,11 +461,11 @@ func (h *Handler) updateTemplate(w http.ResponseWriter, r *http.Request) {
 		errs.MaxLength("description", *body.Description, maxDescriptionLength)
 	}
 	if body.Recurrence != nil {
-		recurrence, err := ParseRecurrenceRequest(body.Recurrence.Frequency, body.Recurrence.Weekdays)
+		rule, err := ParseRecurrenceRequest(body.Recurrence.Frequency, body.Recurrence.Weekdays)
 		if err != nil {
-			errs.Add("recurrence", recurrenceMessage(err))
+			errs.Add("recurrence", recurrence.Message(err))
 		} else {
-			input.Recurrence = &recurrence
+			input.Recurrence = &rule
 		}
 	}
 	if body.DueTime != nil {
@@ -592,17 +593,6 @@ func parseAssignee(errs *validation.Errors, value *string) *uuid.UUID {
 		return nil
 	}
 	return &parsed
-}
-
-func recurrenceMessage(err error) string {
-	switch {
-	case errors.Is(err, ErrNoWeekdays):
-		return "Choose at least one day of the week."
-	case errors.Is(err, ErrUnknownWeekday):
-		return "We do not recognise one of those days."
-	default:
-		return "Choose whether this repeats daily or weekly."
-	}
 }
 
 func derefOrEmpty(value *string) string {

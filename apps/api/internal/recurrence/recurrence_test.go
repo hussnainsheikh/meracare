@@ -1,11 +1,11 @@
-package tasks
+package recurrence
 
 import (
 	"testing"
 	"time"
 )
 
-func TestParseRecurrenceReadsTheRulesTheMVPSupports(t *testing.T) {
+func TestParseReadsTheRulesTheMVPSupports(t *testing.T) {
 	cases := []struct {
 		rule string
 		want string
@@ -23,11 +23,11 @@ func TestParseRecurrenceReadsTheRulesTheMVPSupports(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.rule, func(t *testing.T) {
-			recurrence, err := ParseRecurrence(tc.rule)
+			rule, err := Parse(tc.rule)
 			if err != nil {
-				t.Fatalf("ParseRecurrence(%q): %v", tc.rule, err)
+				t.Fatalf("Parse(%q): %v", tc.rule, err)
 			}
-			if got := recurrence.String(); got != tc.want {
+			if got := rule.String(); got != tc.want {
 				t.Errorf("round trip = %q, want %q", got, tc.want)
 			}
 		})
@@ -36,7 +36,7 @@ func TestParseRecurrenceReadsTheRulesTheMVPSupports(t *testing.T) {
 
 // A rule that parsed loosely would schedule care at the wrong times, which is
 // worse than refusing to save it.
-func TestParseRecurrenceRefusesWhatItCannotHonour(t *testing.T) {
+func TestParseRefusesWhatItCannotHonour(t *testing.T) {
 	cases := []string{
 		"",
 		"FREQ=MONTHLY",
@@ -53,8 +53,8 @@ func TestParseRecurrenceRefusesWhatItCannotHonour(t *testing.T) {
 
 	for _, rule := range cases {
 		t.Run(rule, func(t *testing.T) {
-			if _, err := ParseRecurrence(rule); err == nil {
-				t.Errorf("ParseRecurrence(%q) succeeded; want an error", rule)
+			if _, err := Parse(rule); err == nil {
+				t.Errorf("Parse(%q) succeeded; want an error", rule)
 			}
 		})
 	}
@@ -261,8 +261,8 @@ func TestParseTimeOfDayRejectsImpossibleTimes(t *testing.T) {
 	}
 }
 
-func TestParseRecurrenceRequestReadsWhatTheClientSends(t *testing.T) {
-	daily, err := ParseRecurrenceRequest("daily", nil)
+func TestParseRequestReadsWhatTheClientSends(t *testing.T) {
+	daily, err := ParseRequest("daily", nil)
 	if err != nil {
 		t.Fatalf("daily: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestParseRecurrenceRequestReadsWhatTheClientSends(t *testing.T) {
 		t.Errorf("daily = %q", daily.String())
 	}
 
-	weekly, err := ParseRecurrenceRequest("weekly", []string{"monday", "friday"})
+	weekly, err := ParseRequest("weekly", []string{"monday", "friday"})
 	if err != nil {
 		t.Fatalf("weekly: %v", err)
 	}
@@ -278,13 +278,13 @@ func TestParseRecurrenceRequestReadsWhatTheClientSends(t *testing.T) {
 		t.Errorf("weekly = %q", weekly.String())
 	}
 
-	if _, err := ParseRecurrenceRequest("weekly", nil); err == nil {
+	if _, err := ParseRequest("weekly", nil); err == nil {
 		t.Error("a weekly rule with no days should be refused")
 	}
-	if _, err := ParseRecurrenceRequest("weekly", []string{"someday"}); err == nil {
+	if _, err := ParseRequest("weekly", []string{"someday"}); err == nil {
 		t.Error("an unrecognised day should be refused")
 	}
-	if _, err := ParseRecurrenceRequest("hourly", nil); err == nil {
+	if _, err := ParseRequest("hourly", nil); err == nil {
 		t.Error("an unsupported frequency should be refused")
 	}
 }

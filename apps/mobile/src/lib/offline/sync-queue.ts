@@ -5,16 +5,21 @@
  * a skip is written locally and replayed when the connection returns
  * (docs/07-database-and-sync.md, "Sync Queue").
  *
- * This is deliberately not a general sync engine. It carries the two task
- * mutations Phase 4 needs, in the shape docs/07 specifies, so a later phase can
- * add an entity type without rebuilding the mechanism (plans/phase4.md §26).
+ * This is deliberately not a general sync engine. It carries the mutations the
+ * app actually queues, in the shape docs/07 specifies, so a phase can add an
+ * entity type without rebuilding the mechanism (plans/phase4.md §26). Phase 5
+ * did exactly that: medication doses joined care tasks here rather than
+ * arriving with a queue of their own (plans/phase5.md §20).
  */
 
 /** What kind of thing the operation acts on. */
-export type SyncEntityType = 'task';
+export type SyncEntityType = 'task' | 'medication';
 
-/** What the operation does. Both are idempotent on the server. */
-export type SyncOperationType = 'complete' | 'skip';
+/**
+ * What the operation does. Every one of them is idempotent on the server, which
+ * is what makes replaying the queue safe.
+ */
+export type SyncOperationType = 'complete' | 'skip' | 'take';
 
 /** Where an operation has got to. */
 export type SyncStatus = 'pending' | 'failed';
@@ -127,6 +132,7 @@ export async function processQueue(store: SyncStore, replay: Replay): Promise<Sy
 /** Builds a queued operation. */
 export function newOperation(
   operationId: string,
+  entityType: SyncEntityType,
   entityId: string,
   operationType: SyncOperationType,
   payload: Record<string, unknown> | null,
@@ -134,7 +140,7 @@ export function newOperation(
 ): SyncOperation {
   return {
     operationId,
-    entityType: 'task',
+    entityType,
     entityId,
     operationType,
     payload: payload === null ? null : JSON.stringify(payload),

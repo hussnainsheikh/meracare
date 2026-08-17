@@ -7,7 +7,7 @@ import { Button, Card, Screen, Text } from '@/components/ui';
 import { useSession } from '@/features/auth/session-provider';
 import { useAuthActions } from '@/features/auth/use-auth-actions';
 import { useSeniors } from '@/features/seniors/use-seniors';
-import { useTaskSync } from '@/features/tasks/use-task-sync';
+import { useOfflineSync } from '@/features/sync/use-sync';
 import { useMyTasks } from '@/features/tasks/use-tasks';
 import { ApiError } from '@/lib/api-error';
 import { useTheme } from '@/theme';
@@ -27,7 +27,7 @@ export default function HomeScreen() {
   const myTasks = useMyTasks();
 
   // Anything recorded while offline is sent as soon as the app is usable.
-  useTaskSync();
+  useOfflineSync();
 
   if (!isRestoring && !isSignedIn) {
     return <Redirect href="/sign-in" />;

@@ -15,6 +15,7 @@ import (
 	"github.com/meracare/api/internal/config"
 	"github.com/meracare/api/internal/database"
 	"github.com/meracare/api/internal/invitations"
+	"github.com/meracare/api/internal/medications"
 	"github.com/meracare/api/internal/members"
 	"github.com/meracare/api/internal/relationships"
 	"github.com/meracare/api/internal/seniors"
@@ -60,6 +61,11 @@ func New(deps Dependencies) http.Handler {
 		guard,
 	)
 
+	medicationHandler := medications.NewHandler(
+		medications.NewService(medications.NewRepository(deps.Pool), seniorRepo),
+		guard,
+	)
+
 	router := chi.NewRouter()
 	router.NotFound(httpx.NotFoundHandler())
 	router.MethodNotAllowed(httpx.MethodNotAllowedHandler())
@@ -85,10 +91,12 @@ func New(deps Dependencies) http.Handler {
 		v1.Use(requireAuth)
 		v1.Mount("/me", userHandler.Routes())
 		v1.Mount("/tasks", taskHandler.TaskRoutes())
+		v1.Mount("/medications", medicationHandler.MedicationRoutes())
 		v1.Mount("/seniors", seniorHandler.Routes(seniors.SubRoutes{
 			Members:     memberHandler.Routes(),
 			Invitations: invitationHandler.SeniorRoutes(),
 			Tasks:       taskHandler.SeniorRoutes(),
+			Medications: medicationHandler.SeniorRoutes(),
 		}))
 	})
 

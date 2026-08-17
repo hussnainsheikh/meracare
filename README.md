@@ -28,8 +28,10 @@ cp apps/mobile/.env.example apps/mobile/.env
 pnpm mobile
 ```
 
-Checks: `pnpm typecheck`, `pnpm test`, `pnpm api:test` (set `TEST_DATABASE_URL`
-to include the database integration tests).
+Checks: `pnpm typecheck`, `pnpm test`, `pnpm api:test`. The integration tests
+read `TEST_DATABASE_URL` from `apps/api/.env`, so they run once the database is
+up; unset, they skip. It must be a local database — the suite truncates every
+application table, and anything else is refused before it connects.
 
 ## Architecture Status
 

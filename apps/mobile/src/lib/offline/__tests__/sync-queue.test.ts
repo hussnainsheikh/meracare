@@ -45,7 +45,7 @@ function newStore(initial: SyncOperation[] = []): SyncStore & { all: SyncOperati
 }
 
 function operation(id: string, taskId = 'task-1'): SyncOperation {
-  return newOperation(id, taskId, 'complete', null, `2026-08-17T09:0${id.slice(-1)}:00Z`);
+  return newOperation(id, 'task', taskId, 'complete', null, `2026-08-17T09:0${id.slice(-1)}:00Z`);
 }
 
 const applied = async (): Promise<ReplayOutcome> => ({ kind: 'applied' });
@@ -165,6 +165,7 @@ describe('newOperation', () => {
   it('starts pending, unretried, and carries its payload as JSON', () => {
     const created = newOperation(
       'op-1',
+      'task',
       'task-1',
       'skip',
       { notes: 'She was asleep' },
@@ -184,9 +185,9 @@ describe('newOperation', () => {
   });
 
   it('carries no payload when there is nothing to say', () => {
-    expect(newOperation('op-1', 'task-1', 'complete', null, '2026-08-17T09:00:00Z').payload).toBe(
-      null,
-    );
+    expect(
+      newOperation('op-1', 'task', 'task-1', 'complete', null, '2026-08-17T09:00:00Z').payload,
+    ).toBe(null);
   });
 });
 

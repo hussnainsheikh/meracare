@@ -1,3 +1,5 @@
+import { RECURRENCE_FREQUENCIES, type Recurrence, type RecurrenceFrequency } from './recurrence';
+
 /**
  * Care tasks: the daily routine a circle carries out.
  *
@@ -60,32 +62,16 @@ export interface CareTask {
   updatedAt: string;
 }
 
-/** How often a task repeats. */
-export const TASK_FREQUENCIES = ['daily', 'weekly'] as const;
-export type TaskFrequency = (typeof TASK_FREQUENCIES)[number];
-
-export const WEEKDAYS = [
-  'sunday',
-  'monday',
-  'tuesday',
-  'wednesday',
-  'thursday',
-  'friday',
-  'saturday',
-] as const;
-export type Weekday = (typeof WEEKDAYS)[number];
-
 /**
- * A repeat rule in structured form.
+ * How often a task repeats.
  *
- * The server stores an RRULE string; it never appears here, and never on a
- * screen (plans/phase4.md §21).
+ * The rule grammar is shared with medication schedules — see `recurrence.ts`.
+ * These names stay because a task screen talks about tasks, but they are the
+ * same type, not a parallel one.
  */
-export interface TaskRecurrence {
-  frequency: TaskFrequency;
-  /** Empty for a daily rule. */
-  weekdays: Weekday[];
-}
+export type TaskFrequency = RecurrenceFrequency;
+export const TASK_FREQUENCIES = RECURRENCE_FREQUENCIES;
+export type TaskRecurrence = Recurrence;
 
 /** The definition of a recurring care task. */
 export interface CareTaskTemplate {

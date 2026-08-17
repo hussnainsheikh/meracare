@@ -28,9 +28,14 @@ const DatabaseURLEnv = "TEST_DATABASE_URL"
 func RequireDatabase(t *testing.T) *database.Pool {
 	t.Helper()
 
+	loadDotEnv(t)
+
 	url := os.Getenv(DatabaseURLEnv)
 	if url == "" {
 		t.Skipf("set %s to run integration tests (see docker-compose.yml)", DatabaseURLEnv)
+	}
+	if err := RequireLocalHost(url); err != nil {
+		t.Fatalf("refusing to run integration tests: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -94,6 +99,9 @@ func lock(ctx context.Context, t *testing.T, pool *database.Pool) {
 // so a new table added in a later phase is a deliberate decision here rather
 // than silently leaking rows between tests.
 var applicationTables = []string{
+	"medication_instances",
+	"medication_schedules",
+	"medications",
 	"care_task_instances",
 	"care_task_templates",
 	"invitations",

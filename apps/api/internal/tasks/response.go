@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/meracare/api/internal/recurrence"
 )
 
 // InstanceResponse is the JSON representation of one task occurrence.
@@ -66,64 +67,14 @@ func ToInstanceResponse(instance Instance, now time.Time) InstanceResponse {
 // The stored RRULE string never leaves the server. The client turns this into
 // wording like "Every weekday", which is what a user should read
 // (plans/phase4.md §21).
-type RecurrenceResponse struct {
-	Frequency string   `json:"frequency"`
-	Weekdays  []string `json:"weekdays"`
-}
+type RecurrenceResponse = recurrence.Response
 
-// weekdayNamesLong are the wire names for days, lowercase and unambiguous.
-var weekdayNamesLong = [...]string{
-	"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
-}
-
-// ToRecurrenceResponse renders a rule for the client.
-func ToRecurrenceResponse(recurrence Recurrence) RecurrenceResponse {
-	days := make([]string, 0, len(recurrence.Weekdays))
-	for _, day := range recurrence.Weekdays {
-		days = append(days, weekdayNamesLong[day])
-	}
-
-	frequency := "daily"
-	if recurrence.Frequency == FrequencyWeekly {
-		frequency = "weekly"
-	}
-
-	return RecurrenceResponse{Frequency: frequency, Weekdays: days}
-}
-
-// ParseRecurrenceRequest reads the structured form a client sends.
-func ParseRecurrenceRequest(frequency string, weekdays []string) (Recurrence, error) {
-	switch frequency {
-	case "daily":
-		return Daily(), nil
-
-	case "weekly":
-		days := make([]time.Weekday, 0, len(weekdays))
-		for _, name := range weekdays {
-			day, ok := weekdayFromName(name)
-			if !ok {
-				return Recurrence{}, ErrUnknownWeekday
-			}
-			days = append(days, day)
-		}
-		if len(days) == 0 {
-			return Recurrence{}, ErrNoWeekdays
-		}
-		return Weekly(days...), nil
-
-	default:
-		return Recurrence{}, ErrUnknownFrequency
-	}
-}
-
-func weekdayFromName(name string) (time.Weekday, bool) {
-	for index, candidate := range weekdayNamesLong {
-		if candidate == name {
-			return time.Weekday(index), true
-		}
-	}
-	return 0, false
-}
+var (
+	// ToRecurrenceResponse renders a rule for the client.
+	ToRecurrenceResponse = recurrence.ToResponse
+	// ParseRecurrenceRequest reads the structured form a client sends.
+	ParseRecurrenceRequest = recurrence.ParseRequest
+)
 
 // TemplateResponse is the JSON representation of a recurring task definition.
 type TemplateResponse struct {
