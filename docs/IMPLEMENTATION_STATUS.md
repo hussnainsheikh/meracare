@@ -23,6 +23,14 @@ Migrations are additionally applied to a brand-new database once per phase, with
 the integration suite re-run against it, because a migration that only ever runs
 on an existing database can hide an ordering mistake.
 
+`TEST_DATABASE_URL` must point at localhost. The suite truncates every
+application table on every test, so aimed at the hosted Supabase project it
+would erase real care records — silently, with nothing to notice until
+afterwards. `testsupport.RequireLocalHost` refuses anything else before a
+connection is opened, and there is deliberately no override: a flag to disable
+it would be set once, in a shell nobody remembers. The API itself is a separate
+setting (`DATABASE_URL`) and may point wherever you like.
+
 Restoring CI means putting the `push` and `pull_request` triggers back; the jobs
 themselves are unchanged and cover the same ground as the commands above.
 

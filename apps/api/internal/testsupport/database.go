@@ -32,6 +32,9 @@ func RequireDatabase(t *testing.T) *database.Pool {
 	if url == "" {
 		t.Skipf("set %s to run integration tests (see docker-compose.yml)", DatabaseURLEnv)
 	}
+	if err := RequireLocalHost(url); err != nil {
+		t.Fatalf("refusing to run integration tests: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
