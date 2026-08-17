@@ -1,3 +1,5 @@
+export * from './appointment';
+export * from './appointment-labels';
 export * from './care';
 export * from './circle';
 export * from './datetime';

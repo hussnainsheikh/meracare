@@ -2,15 +2,14 @@ package medications
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/meracare/api/internal/database"
+	"github.com/meracare/api/internal/paging"
 	"github.com/meracare/api/internal/recurrence"
 )
 
@@ -679,46 +678,17 @@ func (r *Repository) Act(ctx context.Context, params ActParams) (Instance, error
 
 // --- Cursors ---------------------------------------------------------------
 
+// The keyset cursor lives in internal/paging: appointments page their history
+// the same way, and one encoder is easier to keep right than two.
+
 // ErrBadCursor is returned when a page cursor cannot be read. It is a sentinel
 // so the handler can answer 400 without inspecting the message.
-var ErrBadCursor = errors.New("medications: unreadable cursor")
+var ErrBadCursor = paging.ErrBadCursor
 
-// encodeCursor renders the keyset position as one opaque token.
-//
-// Opaque on purpose: a client that took it apart would come to depend on the
-// ordering, and the ordering is ours to change.
-func encodeCursor(at time.Time, id uuid.UUID) string {
-	return base64.RawURLEncoding.EncodeToString(
-		[]byte(at.UTC().Format(time.RFC3339Nano) + "|" + id.String()))
-}
-
-// decodeCursor reads a token back. An empty cursor means the first page.
-func decodeCursor(cursor string) (*time.Time, *uuid.UUID, error) {
-	if strings.TrimSpace(cursor) == "" {
-		return nil, nil, nil
-	}
-
-	raw, err := base64.RawURLEncoding.DecodeString(cursor)
-	if err != nil {
-		return nil, nil, ErrBadCursor
-	}
-
-	at, id, ok := strings.Cut(string(raw), "|")
-	if !ok {
-		return nil, nil, ErrBadCursor
-	}
-
-	parsedAt, err := time.Parse(time.RFC3339Nano, at)
-	if err != nil {
-		return nil, nil, ErrBadCursor
-	}
-	parsedID, err := uuid.Parse(id)
-	if err != nil {
-		return nil, nil, ErrBadCursor
-	}
-
-	return &parsedAt, &parsedID, nil
-}
+var (
+	encodeCursor = paging.EncodeCursor
+	decodeCursor = paging.DecodeCursor
+)
 
 // --- Scanning --------------------------------------------------------------
 
