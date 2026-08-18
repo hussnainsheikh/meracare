@@ -5,7 +5,8 @@ import { useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { SessionProvider } from '@/features/auth/session-provider';
+import { SessionProvider, useSession } from '@/features/auth/session-provider';
+import { useReminderSync, useReminderTaps } from '@/features/notifications/use-reminder-sync';
 import { createQueryClient } from '@/lib/query-client';
 import { ThemeProvider, useTheme } from '@/theme';
 
@@ -20,6 +21,7 @@ export default function RootLayout() {
           <ThemeProvider>
             <SessionProvider>
               <ThemedStatusBar />
+              <Reminders />
               <Stack screenOptions={{ headerShown: false }} />
             </SessionProvider>
           </ThemeProvider>
@@ -27,6 +29,23 @@ export default function RootLayout() {
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
+}
+
+/**
+ * Keeps this device's scheduled reminders in step with the server, and opens
+ * the right screen when one is tapped.
+ *
+ * Mounted once, at the root, and renders nothing. It has to outlive every
+ * screen: a notification tapped from the lock screen arrives before any screen
+ * has mounted (plans/phase8.md §15).
+ */
+function Reminders() {
+  const { isSignedIn, isRestoring } = useSession();
+
+  useReminderSync(isSignedIn, isRestoring);
+  useReminderTaps();
+
+  return null;
 }
 
 function ThemedStatusBar() {
