@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/relationships"
 	"github.com/meracare/api/internal/seniors"
 )
@@ -30,6 +32,9 @@ type Service struct {
 	appointments *Repository
 	seniors      SeniorLookup
 	members      MemberLookup
+	// events records what happened, in the same transaction as the change
+	// itself (plans/phase7.md §26).
+	events *careevents.Recorder
 }
 
 // NewService builds the service.
@@ -37,8 +42,14 @@ func NewService(
 	appointments *Repository,
 	seniorLookup SeniorLookup,
 	members MemberLookup,
+	events *careevents.Recorder,
 ) *Service {
-	return &Service{appointments: appointments, seniors: seniorLookup, members: members}
+	return &Service{
+		appointments: appointments,
+		seniors:      seniorLookup,
+		members:      members,
+		events:       events,
+	}
 }
 
 // ErrInvalidAssignee is returned when an appointment is assigned to somebody
@@ -169,18 +180,59 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Appointment, e
 		return Appointment{}, err
 	}
 
-	return s.appointments.Create(ctx, CreateParams{
-		SeniorID:        input.SeniorID,
-		CreatedByUserID: input.CreatedByUserID,
-		Title:           input.Title,
-		Kind:            input.Kind,
-		ProviderName:    input.ProviderName,
-		Location:        input.Location,
-		Notes:           input.Notes,
-		AssignedUserID:  input.AssignedUserID,
-		ScheduledAt:     input.ScheduledAt,
-		EndsAt:          input.EndsAt,
+	var appointment Appointment
+	err := s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		created, err := s.appointments.WithTx(tx).Create(ctx, CreateParams{
+			SeniorID:        input.SeniorID,
+			CreatedByUserID: input.CreatedByUserID,
+			Title:           input.Title,
+			Kind:            input.Kind,
+			ProviderName:    input.ProviderName,
+			Location:        input.Location,
+			Notes:           input.Notes,
+			AssignedUserID:  input.AssignedUserID,
+			ScheduledAt:     input.ScheduledAt,
+			EndsAt:          input.EndsAt,
+		})
+		if err != nil {
+			return err
+		}
+		appointment = created
+
+		return recordAppointmentEvent(
+			ctx, events, created, careevents.TypeAppointmentCreated, input.CreatedByUserID)
 	})
+	if err != nil {
+		return Appointment{}, err
+	}
+	return appointment, nil
+}
+
+// appointmentEventTypeFor maps settling an appointment to the event it produces.
+var appointmentEventTypeFor = map[Action]careevents.Type{
+	ActionComplete: careevents.TypeAppointmentCompleted,
+	ActionCancel:   careevents.TypeAppointmentCancelled,
+}
+
+func recordAppointmentEvent(
+	ctx context.Context,
+	events *careevents.Repository,
+	appointment Appointment,
+	eventType careevents.Type,
+	actorID uuid.UUID,
+) error {
+	_, err := events.Record(ctx, careevents.RecordParams{
+		SeniorID:    appointment.SeniorID,
+		ActorUserID: &actorID,
+		Type:        eventType,
+		EntityType:  careevents.EntityAppointment,
+		EntityID:    appointment.ID,
+		// The title as it reads now. An appointment cannot be edited once
+		// settled, so for the two settling events this is also the title it
+		// will keep (plans/phase6.md §8).
+		Metadata: careevents.Metadata{careevents.MetaAppointmentName: appointment.Title},
+	})
+	return err
 }
 
 // UpdateInput edits an appointment.
@@ -274,28 +326,47 @@ type ActResult struct {
 // succeeds quietly, and a different outcome already recorded, which is refused
 // so the server's version stands (plans/phase6.md §§24–25).
 func (s *Service) Act(ctx context.Context, input ActInput) (ActResult, error) {
-	appointment, err := s.appointments.Act(ctx, ActParams{
-		AppointmentID: input.AppointmentID,
-		Action:        input.Action,
-		ActorID:       input.ActorID,
+	var result ActResult
+
+	err := s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		appointments := s.appointments.WithTx(tx)
+
+		appointment, err := appointments.Act(ctx, ActParams{
+			AppointmentID: input.AppointmentID,
+			Action:        input.Action,
+			ActorID:       input.ActorID,
+		})
+		if err == nil {
+			result = ActResult{Appointment: appointment}
+
+			eventType, ok := appointmentEventTypeFor[input.Action]
+			if !ok {
+				return fmt.Errorf("no care event defined for appointment action %q", input.Action)
+			}
+			return recordAppointmentEvent(ctx, events, appointment, eventType, input.ActorID)
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+
+		current, err := appointments.Get(ctx, input.AppointmentID)
+		if err != nil {
+			return err
+		}
+
+		_, repeat, err := Transition(current.Status, input.Action)
+		if err != nil {
+			return err
+		}
+
+		// A repeat writes no second event (plans/phase7.md §20).
+		result = ActResult{Appointment: current, Repeat: repeat}
+		return nil
 	})
-	if err == nil {
-		return ActResult{Appointment: appointment}, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
-		return ActResult{}, err
-	}
-
-	current, err := s.appointments.Get(ctx, input.AppointmentID)
 	if err != nil {
 		return ActResult{}, err
 	}
-
-	_, repeat, err := Transition(current.Status, input.Action)
-	if err != nil {
-		return ActResult{}, err
-	}
-	return ActResult{Appointment: current, Repeat: repeat}, nil
+	return result, nil
 }
 
 // checkAssignee refuses an assignee who cannot act for this senior.

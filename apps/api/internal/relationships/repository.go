@@ -16,12 +16,12 @@ var ErrNotFound = errors.New("care relationship not found")
 
 // Repository reads and writes care relationships.
 type Repository struct {
-	pool *database.Pool
+	db database.Querier
 }
 
 // NewRepository builds a Repository over the shared pool.
 func NewRepository(pool *database.Pool) *Repository {
-	return &Repository{pool: pool}
+	return &Repository{db: pool}
 }
 
 const relationshipColumns = `id, senior_id, user_id, role, permissions, status, created_at, updated_at`
@@ -37,7 +37,7 @@ type CreateParams struct {
 
 // Create inserts a membership.
 func (r *Repository) Create(ctx context.Context, params CreateParams) (Relationship, error) {
-	return r.create(ctx, r.pool, params)
+	return r.create(ctx, r.db, params)
 }
 
 // CreateTx inserts a membership inside an existing transaction, so a senior and
@@ -80,7 +80,7 @@ func (r *Repository) create(ctx context.Context, db querier, params CreateParams
 // relationship whatever its status; the caller decides what a pending or
 // revoked membership means.
 func (r *Repository) FindByUserAndSenior(ctx context.Context, userID, seniorID uuid.UUID) (Relationship, error) {
-	relationship, err := scanRelationship(r.pool.QueryRow(ctx,
+	relationship, err := scanRelationship(r.db.QueryRow(ctx,
 		`SELECT `+relationshipColumns+`
 		 FROM care_relationships
 		 WHERE user_id = $1 AND senior_id = $2`,
@@ -97,7 +97,7 @@ func (r *Repository) FindByUserAndSenior(ctx context.Context, userID, seniorID u
 
 // ListForSenior returns the senior's care circle, most recently joined last.
 func (r *Repository) ListForSenior(ctx context.Context, seniorID uuid.UUID) ([]Relationship, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+relationshipColumns+`
 		 FROM care_relationships
 		 WHERE senior_id = $1 AND status <> 'revoked'
@@ -153,4 +153,11 @@ func collectRelationships(rows pgx.Rows) ([]Relationship, error) {
 		return nil, fmt.Errorf("read care relationships: %w", err)
 	}
 	return found, nil
+}
+
+// WithTx returns a repository bound to tx, so a membership change and the care event
+// describing it are written through the same connection and commit together
+// (plans/phase7.md §26).
+func (r *Repository) WithTx(tx pgx.Tx) *Repository {
+	return &Repository{db: tx}
 }

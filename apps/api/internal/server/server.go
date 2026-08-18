@@ -13,6 +13,7 @@ import (
 	"github.com/meracare/api/internal/appointments"
 	"github.com/meracare/api/internal/auth"
 	"github.com/meracare/api/internal/authz"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/config"
 	"github.com/meracare/api/internal/database"
 	"github.com/meracare/api/internal/invitations"
@@ -43,10 +44,16 @@ func New(deps Dependencies) http.Handler {
 	// Every senior-scoped route resolves access through this guard.
 	guard := authz.NewGuard(relationshipRepo)
 
+	// Every domain that changes something records what happened through this,
+	// in the same transaction as the change (plans/phase7.md §§6, 23, 26).
+	eventRepo := careevents.NewRepository(deps.Pool)
+	recorder := careevents.NewRecorder(deps.Pool, eventRepo)
+	activityHandler := careevents.NewHandler(careevents.NewService(eventRepo))
+
 	seniorRepo := seniors.NewRepository(deps.Pool)
 	seniorHandler := seniors.NewHandler(seniors.NewService(seniorRepo, relationshipRepo), guard)
 
-	memberHandler := members.NewHandler(members.NewService(relationshipRepo), guard)
+	memberHandler := members.NewHandler(members.NewService(relationshipRepo, recorder), guard)
 
 	requireAuth := auth.RequireAuth(deps.Verifier, userService)
 	invitationService := invitations.NewService(
@@ -54,22 +61,23 @@ func New(deps Dependencies) http.Handler {
 		relationshipRepo,
 		userLookup{repo: userRepo},
 		seniorRepo,
+		recorder,
 	)
 	invitationHandler := invitations.NewHandler(invitationService, guard, requireAuth)
 
 	taskHandler := tasks.NewHandler(
-		tasks.NewService(tasks.NewRepository(deps.Pool), seniorRepo, relationshipRepo),
+		tasks.NewService(tasks.NewRepository(deps.Pool), seniorRepo, relationshipRepo, recorder),
 		guard,
 	)
 
 	medicationHandler := medications.NewHandler(
-		medications.NewService(medications.NewRepository(deps.Pool), seniorRepo),
+		medications.NewService(medications.NewRepository(deps.Pool), seniorRepo, recorder),
 		guard,
 	)
 
 	appointmentHandler := appointments.NewHandler(
 		appointments.NewService(
-			appointments.NewRepository(deps.Pool), seniorRepo, relationshipRepo,
+			appointments.NewRepository(deps.Pool), seniorRepo, relationshipRepo, recorder,
 		),
 		guard,
 	)
@@ -107,6 +115,7 @@ func New(deps Dependencies) http.Handler {
 			Tasks:        taskHandler.SeniorRoutes(),
 			Medications:  medicationHandler.SeniorRoutes(),
 			Appointments: appointmentHandler.SeniorRoutes(),
+			Activity:     activityHandler.SeniorRoutes(guard),
 		}))
 	})
 

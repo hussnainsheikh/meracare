@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/meracare/api/internal/auth"
 	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/relationships"
 )
 
@@ -75,6 +77,9 @@ type Service struct {
 	members       MemberLookup
 	users         UserLookup
 	seniors       SeniorLookup
+	// events records what happened, in the same transaction as the change
+	// itself (plans/phase7.md §26).
+	events *careevents.Recorder
 	// now is injectable so expiry can be tested without waiting.
 	now func() time.Time
 }
@@ -85,6 +90,7 @@ func NewService(
 	relationshipRepo *relationships.Repository,
 	users UserLookup,
 	seniors SeniorLookup,
+	events *careevents.Recorder,
 ) *Service {
 	return &Service{
 		invitations:   invitationRepo,
@@ -92,6 +98,7 @@ func NewService(
 		members:       relationshipRepo,
 		users:         users,
 		seniors:       seniors,
+		events:        events,
 		now:           time.Now,
 	}
 }
@@ -169,14 +176,38 @@ func (s *Service) Create(
 		lifetime = DefaultLifetime
 	}
 
-	invitation, err := s.invitations.Create(ctx, CreateParams{
-		SeniorID:      input.SeniorID,
-		InviterUserID: inviter.UserID,
-		InviteeEmail:  email,
-		Role:          input.Role,
-		Permissions:   granted,
-		TokenHash:     token.Hash(),
-		ExpiresAt:     s.now().Add(lifetime),
+	var invitation Invitation
+	err = s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		created, err := s.invitations.WithTx(tx).Create(ctx, CreateParams{
+			SeniorID:      input.SeniorID,
+			InviterUserID: inviter.UserID,
+			InviteeEmail:  email,
+			Role:          input.Role,
+			Permissions:   granted,
+			TokenHash:     token.Hash(),
+			ExpiresAt:     s.now().Add(lifetime),
+		})
+		if err != nil {
+			return err
+		}
+		invitation = created
+
+		// The invitee's email, not a name: they may have no account yet, and
+		// there is nothing else to call them. It is the same address the
+		// inviter typed, so it reveals nothing to the circle that a member did
+		// not already put there (plans/phase7.md §10).
+		_, err = events.Record(ctx, careevents.RecordParams{
+			SeniorID:    created.SeniorID,
+			ActorUserID: &inviter.UserID,
+			Type:        careevents.TypeMemberInvited,
+			EntityType:  careevents.EntityInvitation,
+			EntityID:    created.ID,
+			Metadata: careevents.Metadata{
+				careevents.MetaMemberName: created.InviteeEmail,
+				careevents.MetaRole:       string(created.Role),
+			},
+		})
+		return err
 	})
 	if err != nil {
 		return Created{}, err
@@ -269,36 +300,52 @@ func (s *Service) Accept(
 		return relationships.Relationship{}, ErrWrongRecipient
 	}
 
-	tx, err := s.invitations.BeginTx(ctx)
-	if err != nil {
-		return relationships.Relationship{}, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback(context.WithoutCancel(ctx))
-	}()
-
-	// Consuming the invitation first means a lost race fails before any
-	// membership is written.
-	if _, err := s.invitations.MarkAcceptedTx(ctx, tx, invitation.ID, principal.UserID); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return relationships.Relationship{}, ErrNotAcceptable
+	// One transaction covering all three writes: consuming the invitation,
+	// creating the membership, and recording that somebody joined. The first
+	// two were already atomic in Phase 3; the event joins them rather than
+	// opening a second transaction that could commit on its own
+	// (plans/phase7.md §26).
+	var relationship relationships.Relationship
+	err = s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		// Consuming the invitation first means a lost race fails before any
+		// membership is written.
+		if _, err := s.invitations.MarkAcceptedTx(ctx, tx, invitation.ID, principal.UserID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return ErrNotAcceptable
+			}
+			return err
 		}
-		return relationships.Relationship{}, err
-	}
 
-	relationship, err := s.relationships.UpsertActiveTx(ctx, tx, relationships.CreateParams{
-		SeniorID:    invitation.SeniorID,
-		UserID:      principal.UserID,
-		Role:        invitation.Role,
-		Permissions: invitation.Permissions,
-		Status:      care.StatusActive,
+		joined, err := s.relationships.UpsertActiveTx(ctx, tx, relationships.CreateParams{
+			SeniorID:    invitation.SeniorID,
+			UserID:      principal.UserID,
+			Role:        invitation.Role,
+			Permissions: invitation.Permissions,
+			Status:      care.StatusActive,
+		})
+		if err != nil {
+			return err
+		}
+		relationship = joined
+
+		// The actor is the person joining, taken from their session — the one
+		// thing about this flow a client could never be trusted to assert
+		// (plans/phase7.md §4).
+		_, err = events.Record(ctx, careevents.RecordParams{
+			SeniorID:    joined.SeniorID,
+			ActorUserID: &principal.UserID,
+			Type:        careevents.TypeMemberJoined,
+			EntityType:  careevents.EntityRelationship,
+			EntityID:    joined.ID,
+			Metadata: careevents.Metadata{
+				careevents.MetaMemberName: principal.Email,
+				careevents.MetaRole:       string(joined.Role),
+			},
+		})
+		return err
 	})
 	if err != nil {
 		return relationships.Relationship{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return relationships.Relationship{}, fmt.Errorf("commit invitation acceptance: %w", err)
 	}
 	return relationship, nil
 }

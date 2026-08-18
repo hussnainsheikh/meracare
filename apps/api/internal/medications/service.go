@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/recurrence"
 	"github.com/meracare/api/internal/seniors"
 )
@@ -21,11 +23,18 @@ type SeniorLookup interface {
 type Service struct {
 	medications *Repository
 	seniors     SeniorLookup
+	// events records what happened, in the same transaction as the change
+	// itself (plans/phase7.md §26).
+	events *careevents.Recorder
 }
 
 // NewService builds the service.
-func NewService(medications *Repository, seniorLookup SeniorLookup) *Service {
-	return &Service{medications: medications, seniors: seniorLookup}
+func NewService(
+	medications *Repository,
+	seniorLookup SeniorLookup,
+	events *careevents.Recorder,
+) *Service {
+	return &Service{medications: medications, seniors: seniorLookup, events: events}
 }
 
 // ErrBadWindow is returned when the requested date range is unusable. It is a
@@ -101,14 +110,39 @@ type Created struct {
 
 // Create adds a medication and its times.
 func (s *Service) Create(ctx context.Context, input CreateInput, now time.Time) (Created, error) {
-	medication, err := s.medications.CreateMedication(ctx, CreateMedicationParams{
-		SeniorID:        input.SeniorID,
-		CreatedByUserID: input.CreatedByUserID,
-		Name:            input.Name,
-		Dosage:          input.Dosage,
-		Form:            input.Form,
-		Instructions:    input.Instructions,
-		Notes:           input.Notes,
+	// The medicine and its MEDICATION_CREATED event commit together. The times
+	// it is taken are added afterwards and outside: a duplicate time is the
+	// client's mistake and is skipped rather than abandoning a medicine that
+	// was correctly recorded, which was already the Phase 5 behaviour and is
+	// not this phase's to change (plans/phase5.md §11).
+	var medication Medication
+	err := s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		created, err := s.medications.WithTx(tx).CreateMedication(ctx, CreateMedicationParams{
+			SeniorID:        input.SeniorID,
+			CreatedByUserID: input.CreatedByUserID,
+			Name:            input.Name,
+			Dosage:          input.Dosage,
+			Form:            input.Form,
+			Instructions:    input.Instructions,
+			Notes:           input.Notes,
+		})
+		if err != nil {
+			return err
+		}
+		medication = created
+
+		_, err = events.Record(ctx, careevents.RecordParams{
+			SeniorID:    created.SeniorID,
+			ActorUserID: &input.CreatedByUserID,
+			Type:        careevents.TypeMedicationCreated,
+			EntityType:  careevents.EntityMedication,
+			EntityID:    created.ID,
+			Metadata: careevents.Metadata{
+				careevents.MetaMedicationName: created.Name,
+				careevents.MetaDosage:         created.Dosage,
+			},
+		})
+		return err
 	})
 	if err != nil {
 		return Created{}, err
@@ -474,29 +508,82 @@ type ActResult struct {
 // quietly, and a different outcome already recorded, which is refused so the
 // server's version stands (plans/phase5.md §§21–22).
 func (s *Service) Act(ctx context.Context, input ActInput) (ActResult, error) {
-	instance, err := s.medications.Act(ctx, ActParams{
-		InstanceID: input.InstanceID,
-		Action:     input.Action,
-		ActorID:    input.ActorID,
-		Notes:      input.Notes,
+	var result ActResult
+
+	err := s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		medications := s.medications.WithTx(tx)
+
+		instance, err := medications.Act(ctx, ActParams{
+			InstanceID: input.InstanceID,
+			Action:     input.Action,
+			ActorID:    input.ActorID,
+			Notes:      input.Notes,
+		})
+		if err == nil {
+			result = ActResult{Instance: instance}
+			return recordDoseAction(ctx, events, instance, input.Action, input.ActorID)
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+
+		current, err := medications.GetInstance(ctx, input.InstanceID)
+		if err != nil {
+			return err
+		}
+
+		_, repeat, err := Transition(current.Status, input.Action)
+		if err != nil {
+			return err
+		}
+
+		// A repeat writes no second event. The state machine already decided
+		// nothing happened this time, and reusing that decision is what keeps a
+		// dose replayed by the offline queue from appearing twice in the
+		// timeline (plans/phase7.md §20).
+		result = ActResult{Instance: current, Repeat: repeat}
+		return nil
 	})
-	if err == nil {
-		return ActResult{Instance: instance}, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
-		return ActResult{}, err
-	}
-
-	current, err := s.medications.GetInstance(ctx, input.InstanceID)
 	if err != nil {
 		return ActResult{}, err
 	}
+	return result, nil
+}
 
-	_, repeat, err := Transition(current.Status, input.Action)
-	if err != nil {
-		return ActResult{}, err
+// doseEventTypeFor maps a dose action to the event it produces.
+var doseEventTypeFor = map[Action]careevents.Type{
+	ActionTake: careevents.TypeMedicationTaken,
+	ActionSkip: careevents.TypeMedicationSkipped,
+}
+
+func recordDoseAction(
+	ctx context.Context,
+	events *careevents.Repository,
+	instance Instance,
+	action Action,
+	actorID uuid.UUID,
+) error {
+	eventType, ok := doseEventTypeFor[action]
+	if !ok {
+		return fmt.Errorf("no care event defined for dose action %q", action)
 	}
-	return ActResult{Instance: current, Repeat: repeat}, nil
+
+	// The dose already carries the name and dosage as they read when it was
+	// scheduled, so the event inherits a value that was never going to drift.
+	_, err := events.Record(ctx, careevents.RecordParams{
+		SeniorID:    instance.SeniorID,
+		ActorUserID: &actorID,
+		Type:        eventType,
+		EntityType:  careevents.EntityMedication,
+		// The dose, not the medicine: the timeline entry is about this dose,
+		// and tapping it should lead to the dose that was taken.
+		EntityID: instance.ID,
+		Metadata: careevents.Metadata{
+			careevents.MetaMedicationName: instance.Name,
+			careevents.MetaDosage:         instance.Dosage,
+		},
+	})
+	return err
 }
 
 // --- Generation ------------------------------------------------------------

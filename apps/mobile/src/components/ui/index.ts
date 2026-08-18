@@ -1,3 +1,4 @@
+export { ActivityRow, type ActivityRowProps } from './activity-row';
 export { AppointmentCard, type AppointmentCardProps } from './appointment-card';
 export { Button, type ButtonProps, type ButtonVariant } from './button';
 export { Card } from './card';

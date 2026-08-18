@@ -111,7 +111,7 @@ func (h *Handler) revoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	revoked, err := h.service.Revoke(r.Context(), editor.SeniorID, relationshipID)
+	revoked, err := h.service.Revoke(r.Context(), editor.SeniorID, relationshipID, editor.UserID)
 	if err != nil {
 		h.writeError(w, r, err)
 		return

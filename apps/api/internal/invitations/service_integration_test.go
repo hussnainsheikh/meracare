@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/meracare/api/internal/auth"
 	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/invitations"
 	"github.com/meracare/api/internal/members"
 	"github.com/meracare/api/internal/relationships"
@@ -21,6 +22,7 @@ import (
 // around it. Skipped unless TEST_DATABASE_URL is set.
 
 type fixture struct {
+	events        *careevents.Service
 	invitations   *invitations.Service
 	invitationRep *invitations.Repository
 	members       *members.Service
@@ -53,17 +55,20 @@ func newFixture(t *testing.T) *fixture {
 	seniorRepo := seniors.NewRepository(pool)
 	userRepo := users.NewRepository(pool)
 	invitationRepo := invitations.NewRepository(pool)
+	eventRepo := careevents.NewRepository(pool)
+	recorder := careevents.NewRecorder(pool, eventRepo)
 
 	f := &fixture{
+		events:        careevents.NewService(eventRepo),
 		invitationRep: invitationRepo,
-		members:       members.NewService(relationshipRepo),
+		members:       members.NewService(relationshipRepo, recorder),
 		seniors:       seniors.NewService(seniorRepo, relationshipRepo),
 		relationships: relationshipRepo,
 		users:         userRepo,
 		now:           time.Now,
 	}
 	f.invitations = invitations.NewService(
-		invitationRepo, relationshipRepo, userLookup{repo: userRepo}, seniorRepo,
+		invitationRepo, relationshipRepo, userLookup{repo: userRepo}, seniorRepo, recorder,
 	).WithClock(func() time.Time { return f.now() })
 
 	return f
@@ -501,7 +506,7 @@ func TestRevokedMemberCanBeInvitedBack(t *testing.T) {
 		t.Fatalf("Accept: %v", err)
 	}
 
-	if _, err := f.members.Revoke(ctx, circle.Senior.ID, original.ID); err != nil {
+	if _, err := f.members.Revoke(ctx, circle.Senior.ID, original.ID, circle.Relationship.UserID); err != nil {
 		t.Fatalf("Revoke membership: %v", err)
 	}
 
@@ -518,4 +523,105 @@ func TestRevokedMemberCanBeInvitedBack(t *testing.T) {
 	if !revived.IsActive() || revived.Role != care.RoleFamilyMember {
 		t.Errorf("revived membership = %+v, want an active family member", revived)
 	}
+}
+
+// --- Care events (Phase 7) ---------------------------------------------------
+
+// Inviting somebody and their joining are both things that happened to the care
+// circle, and both belong in the one timeline rather than in an invitation
+// history nobody else reads (plans/phase7.md §7).
+func TestInvitingAndJoiningAppearInTheTimeline(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	sara := f.newUser(t, "sara-events@example.com")
+	circle := f.newCircle(t, sara, "Mrs Khan")
+	maria := f.newUser(t, "maria-events@example.com")
+
+	created := f.invite(t, circle.Relationship, circle.Senior.ID, maria.Email,
+		care.RoleProfessionalCaregiver)
+
+	page, err := f.events.Activity(ctx, circle.Senior.ID, "", 50)
+	if err != nil {
+		t.Fatalf("read activity: %v", err)
+	}
+
+	invited := requireEvent(t, page.Items, careevents.TypeMemberInvited)
+	if invited.ActorUserID == nil || *invited.ActorUserID != sara.UserID {
+		t.Errorf("actor = %v, want the inviter %v", invited.ActorUserID, sara.UserID)
+	}
+	if invited.EntityType != careevents.EntityInvitation || invited.EntityID != created.Invitation.ID {
+		t.Errorf("event points at %s %v, want invitation %v",
+			invited.EntityType, invited.EntityID, created.Invitation.ID)
+	}
+	if invited.Metadata[careevents.MetaRole] != string(care.RoleProfessionalCaregiver) {
+		t.Errorf("metadata = %v, want the proposed role", invited.Metadata)
+	}
+
+	if _, err := f.invitations.Accept(ctx, maria, created.Token); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+
+	page, err = f.events.Activity(ctx, circle.Senior.ID, "", 50)
+	if err != nil {
+		t.Fatalf("read activity: %v", err)
+	}
+
+	joined := requireEvent(t, page.Items, careevents.TypeMemberJoined)
+	// The actor is the person joining, from their session — the one thing about
+	// this flow a client could never be trusted to assert.
+	if joined.ActorUserID == nil || *joined.ActorUserID != maria.UserID {
+		t.Errorf("actor = %v, want the person who joined %v", joined.ActorUserID, maria.UserID)
+	}
+}
+
+// A refused acceptance must leave no trace: no membership, and no event saying
+// somebody joined (plans/phase7.md §26).
+func TestARefusedAcceptanceRecordsNoEvent(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	sara := f.newUser(t, "sara-refused@example.com")
+	circle := f.newCircle(t, sara, "Mrs Khan")
+	maria := f.newUser(t, "maria-refused@example.com")
+	intruder := f.newUser(t, "intruder-refused@example.com")
+
+	created := f.invite(t, circle.Relationship, circle.Senior.ID, maria.Email,
+		care.RoleProfessionalCaregiver)
+
+	// An invitation is addressed to a person, not to whoever holds the link.
+	if _, err := f.invitations.Accept(ctx, intruder, created.Token); err == nil {
+		t.Fatal("somebody else redeemed the invitation")
+	}
+
+	page, err := f.events.Activity(ctx, circle.Senior.ID, "", 50)
+	if err != nil {
+		t.Fatalf("read activity: %v", err)
+	}
+	for _, event := range page.Items {
+		if event.Type == careevents.TypeMemberJoined {
+			t.Error("a refused acceptance wrote MEMBER_JOINED")
+		}
+	}
+}
+
+func requireEvent(
+	t *testing.T,
+	events []careevents.Event,
+	wanted careevents.Type,
+) careevents.Event {
+	t.Helper()
+
+	for _, event := range events {
+		if event.Type == wanted {
+			return event
+		}
+	}
+
+	found := make([]careevents.Type, 0, len(events))
+	for _, event := range events {
+		found = append(found, event.Type)
+	}
+	t.Fatalf("no %s in the timeline; found %v", wanted, found)
+	return careevents.Event{}
 }

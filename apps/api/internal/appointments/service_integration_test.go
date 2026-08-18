@@ -10,6 +10,7 @@ import (
 	"github.com/meracare/api/internal/appointments"
 	"github.com/meracare/api/internal/auth"
 	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/relationships"
 	"github.com/meracare/api/internal/seniors"
 	"github.com/meracare/api/internal/testsupport"
@@ -31,9 +32,11 @@ func newFixture(t *testing.T) fixture {
 	relationshipRepo := relationships.NewRepository(pool)
 	seniorRepo := seniors.NewRepository(pool)
 	appointmentRepo := appointments.NewRepository(pool)
+	events := careevents.NewRepository(pool)
+	recorder := careevents.NewRecorder(pool, events)
 
 	return fixture{
-		appointments:  appointments.NewService(appointmentRepo, seniorRepo, relationshipRepo),
+		appointments:  appointments.NewService(appointmentRepo, seniorRepo, relationshipRepo, recorder),
 		repo:          appointmentRepo,
 		seniors:       seniors.NewService(seniorRepo, relationshipRepo),
 		relationships: relationshipRepo,

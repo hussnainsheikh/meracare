@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/meracare/api/internal/auth"
 	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/members"
 	"github.com/meracare/api/internal/relationships"
 	"github.com/meracare/api/internal/seniors"
@@ -29,7 +30,7 @@ func newFixture(t *testing.T) fixture {
 	relationshipRepo := relationships.NewRepository(pool)
 
 	return fixture{
-		members:       members.NewService(relationshipRepo),
+		members:       members.NewService(relationshipRepo, careevents.NewRecorder(pool, careevents.NewRepository(pool))),
 		seniors:       seniors.NewService(seniors.NewRepository(pool), relationshipRepo),
 		relationships: relationshipRepo,
 		users:         users.NewRepository(pool),
@@ -256,7 +257,7 @@ func TestSeniorsOwnMembershipCannotBeChangedOrRemoved(t *testing.T) {
 		t.Fatalf("update error = %v, want ErrCannotModifySenior", err)
 	}
 
-	_, err = f.members.Revoke(ctx, own.Senior.ID, own.Relationship.ID)
+	_, err = f.members.Revoke(ctx, own.Senior.ID, own.Relationship.ID, sara.UserID)
 	if !errors.Is(err, members.ErrCannotModifySenior) {
 		t.Fatalf("revoke error = %v, want ErrCannotModifySenior", err)
 	}
@@ -282,7 +283,7 @@ func TestRevokedMemberLosesAccessButKeepsTheirRecord(t *testing.T) {
 	maria := f.newUser(t, "maria-revoke@example.com")
 	member := f.addMember(t, circle.Senior.ID, maria, care.RoleProfessionalCaregiver)
 
-	revoked, err := f.members.Revoke(ctx, circle.Senior.ID, member.ID)
+	revoked, err := f.members.Revoke(ctx, circle.Senior.ID, member.ID, sara.UserID)
 	if err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
@@ -341,7 +342,7 @@ func TestCannotManageAMemberOfAnotherCircle(t *testing.T) {
 		t.Fatalf("update error = %v, want ErrNotFound", err)
 	}
 
-	_, err = f.members.Revoke(ctx, mine.Senior.ID, theirs.Relationship.ID)
+	_, err = f.members.Revoke(ctx, mine.Senior.ID, theirs.Relationship.ID, sara.UserID)
 	if !errors.Is(err, members.ErrNotFound) {
 		t.Fatalf("revoke error = %v, want ErrNotFound", err)
 	}
@@ -363,7 +364,7 @@ func TestRevokeUnknownMember(t *testing.T) {
 	sara := f.newUser(t, "sara-unknown@example.com")
 	circle := f.newCircle(t, sara, "Mrs Khan")
 
-	if _, err := f.members.Revoke(ctx, circle.Senior.ID, uuid.New()); !errors.Is(err, members.ErrNotFound) {
+	if _, err := f.members.Revoke(ctx, circle.Senior.ID, uuid.New(), sara.UserID); !errors.Is(err, members.ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
 }

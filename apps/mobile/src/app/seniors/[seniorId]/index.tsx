@@ -11,8 +11,8 @@ import { useTheme } from '@/theme';
  * Senior dashboard.
  *
  * The same screen serves every care mode; the caller's permissions decide which
- * actions appear. Tasks, medication and appointments are here; the activity
- * timeline arrives in Phase 7.
+ * actions appear. Tasks, medication, appointments and the activity timeline are
+ * all reachable from here.
  */
 export default function SeniorDashboardScreen() {
   const theme = useTheme();
@@ -154,6 +154,25 @@ export default function SeniorDashboardScreen() {
             onPress={() =>
               router.push({
                 pathname: '/seniors/[seniorId]/appointments',
+                params: { seniorId: profile.id },
+              })
+            }
+          />
+        </Card>
+      ) : null}
+
+      {can(profile, 'activity.view') ? (
+        <Card>
+          <Text variant="sectionHeading">Activity</Text>
+          <Text variant="body" color="secondary">
+            What you and the care circle have been doing.
+          </Text>
+          <Button
+            variant="secondary"
+            label="View activity"
+            onPress={() =>
+              router.push({
+                pathname: '/seniors/[seniorId]/activity',
                 params: { seniorId: profile.id },
               })
             }

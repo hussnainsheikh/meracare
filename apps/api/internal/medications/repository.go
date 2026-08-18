@@ -18,12 +18,12 @@ var ErrNotFound = errors.New("medication not found")
 
 // Repository reads and writes medications, their schedules, and their doses.
 type Repository struct {
-	pool *database.Pool
+	db database.Querier
 }
 
 // NewRepository builds a Repository over the shared pool.
 func NewRepository(pool *database.Pool) *Repository {
-	return &Repository{pool: pool}
+	return &Repository{db: pool}
 }
 
 const medicationColumns = `id, senior_id, created_by_user_id, name, dosage, form,
@@ -63,7 +63,7 @@ func (r *Repository) CreateMedication(
 	ctx context.Context,
 	params CreateMedicationParams,
 ) (Medication, error) {
-	medication, err := scanMedication(r.pool.QueryRow(ctx, `
+	medication, err := scanMedication(r.db.QueryRow(ctx, `
 		INSERT INTO medications (
 			senior_id, created_by_user_id, name, dosage, form, instructions, notes
 		)
@@ -85,7 +85,7 @@ func (r *Repository) CreateMedication(
 
 // GetMedication loads one medication.
 func (r *Repository) GetMedication(ctx context.Context, id uuid.UUID) (Medication, error) {
-	medication, err := scanMedication(r.pool.QueryRow(ctx,
+	medication, err := scanMedication(r.db.QueryRow(ctx,
 		`SELECT `+medicationColumns+` FROM medications WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Medication{}, ErrNotFound
@@ -104,7 +104,7 @@ func (r *Repository) ListMedications(
 	ctx context.Context,
 	seniorID uuid.UUID,
 ) ([]Medication, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+medicationColumns+`
 		 FROM medications
 		 WHERE senior_id = $1
@@ -157,7 +157,7 @@ func (r *Repository) UpdateMedication(
 		form = &value
 	}
 
-	medication, err := scanMedication(r.pool.QueryRow(ctx, `
+	medication, err := scanMedication(r.db.QueryRow(ctx, `
 		UPDATE medications
 		SET name         = COALESCE($2, name),
 		    dosage       = COALESCE($3, dosage),
@@ -211,7 +211,7 @@ func (r *Repository) CreateSchedule(
 	ctx context.Context,
 	params CreateScheduleParams,
 ) (Schedule, error) {
-	schedule, err := scanSchedule(r.pool.QueryRow(ctx, `
+	schedule, err := scanSchedule(r.db.QueryRow(ctx, `
 		INSERT INTO medication_schedules (
 			medication_id, senior_id, recurrence_rule, scheduled_time
 		)
@@ -233,7 +233,7 @@ func (r *Repository) CreateSchedule(
 
 // GetSchedule loads one schedule.
 func (r *Repository) GetSchedule(ctx context.Context, id uuid.UUID) (Schedule, error) {
-	schedule, err := scanSchedule(r.pool.QueryRow(ctx,
+	schedule, err := scanSchedule(r.db.QueryRow(ctx,
 		`SELECT `+scheduleColumns+` FROM medication_schedules WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Schedule{}, ErrNotFound
@@ -249,7 +249,7 @@ func (r *Repository) ListSchedules(
 	ctx context.Context,
 	medicationID uuid.UUID,
 ) ([]Schedule, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+scheduleColumns+`
 		 FROM medication_schedules
 		 WHERE medication_id = $1
@@ -284,7 +284,7 @@ func (r *Repository) ListDueSchedulesForSenior(
 	ctx context.Context,
 	seniorID uuid.UUID,
 ) ([]Scheduled, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+scheduleColumnsAliased+`, m.name, m.dosage, m.created_by_user_id
 		 FROM medication_schedules s
 		 JOIN medications m ON m.id = s.medication_id
@@ -303,7 +303,7 @@ func (r *Repository) ListDueSchedulesForMedication(
 	ctx context.Context,
 	medicationID uuid.UUID,
 ) ([]Scheduled, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+scheduleColumnsAliased+`, m.name, m.dosage, m.created_by_user_id
 		 FROM medication_schedules s
 		 JOIN medications m ON m.id = s.medication_id
@@ -342,7 +342,7 @@ func (r *Repository) UpdateSchedule(
 		at = &value
 	}
 
-	schedule, err := scanSchedule(r.pool.QueryRow(ctx, `
+	schedule, err := scanSchedule(r.db.QueryRow(ctx, `
 		UPDATE medication_schedules
 		SET recurrence_rule = COALESCE($2, recurrence_rule),
 		    scheduled_time  = COALESCE($3::time, scheduled_time),
@@ -383,7 +383,7 @@ func (r *Repository) CreateInstance(
 	ctx context.Context,
 	params CreateInstanceParams,
 ) (Instance, error) {
-	instance, err := scanInstance(r.pool.QueryRow(ctx, `
+	instance, err := scanInstance(r.db.QueryRow(ctx, `
 		INSERT INTO medication_instances (
 			medication_id, senior_id, created_by_user_id, name, dosage, scheduled_for
 		)
@@ -418,7 +418,7 @@ func (r *Repository) Materialise(
 		return nil
 	}
 
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.db.Exec(ctx, `
 		INSERT INTO medication_instances (
 			schedule_id, medication_id, senior_id, created_by_user_id,
 			name, dosage, scheduled_for
@@ -452,7 +452,7 @@ func (r *Repository) DiscardFuturePending(
 	scheduleID uuid.UUID,
 	after time.Time,
 ) (int64, error) {
-	tag, err := r.pool.Exec(ctx, `
+	tag, err := r.db.Exec(ctx, `
 		DELETE FROM medication_instances
 		WHERE schedule_id = $1 AND status = 'pending' AND scheduled_for > $2`,
 		scheduleID, after)
@@ -469,7 +469,7 @@ func (r *Repository) DiscardFuturePendingForMedication(
 	medicationID uuid.UUID,
 	after time.Time,
 ) (int64, error) {
-	tag, err := r.pool.Exec(ctx, `
+	tag, err := r.db.Exec(ctx, `
 		DELETE FROM medication_instances
 		WHERE medication_id = $1 AND status = 'pending' AND scheduled_for > $2`,
 		medicationID, after)
@@ -481,7 +481,7 @@ func (r *Repository) DiscardFuturePendingForMedication(
 
 // GetInstance loads one dose.
 func (r *Repository) GetInstance(ctx context.Context, id uuid.UUID) (Instance, error) {
-	instance, err := scanInstance(r.pool.QueryRow(ctx,
+	instance, err := scanInstance(r.db.QueryRow(ctx,
 		`SELECT `+instanceColumns+` FROM medication_instances WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Instance{}, ErrNotFound
@@ -498,7 +498,7 @@ func (r *Repository) ListWindow(
 	seniorID uuid.UUID,
 	from, to time.Time,
 ) ([]Instance, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+instanceColumns+`
 		 FROM medication_instances
 		 WHERE senior_id = $1 AND scheduled_for >= $2 AND scheduled_for < $3
@@ -518,7 +518,7 @@ func (r *Repository) ListMedicationWindow(
 	medicationID uuid.UUID,
 	from, to time.Time,
 ) ([]Instance, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+instanceColumns+`
 		 FROM medication_instances
 		 WHERE medication_id = $1 AND scheduled_for >= $2 AND scheduled_for < $3
@@ -539,7 +539,7 @@ func (r *Repository) NextPendingDose(
 	medicationID uuid.UUID,
 	from time.Time,
 ) (*Instance, error) {
-	instance, err := scanInstance(r.pool.QueryRow(ctx,
+	instance, err := scanInstance(r.db.QueryRow(ctx,
 		`SELECT `+instanceColumns+`
 		 FROM medication_instances
 		 WHERE medication_id = $1 AND status = 'pending' AND scheduled_for >= $2
@@ -563,7 +563,7 @@ func (r *Repository) ListMissed(
 	before time.Time,
 	limit int,
 ) ([]Instance, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+instanceColumns+`
 		 FROM medication_instances
 		 WHERE senior_id = $1 AND status = 'pending' AND scheduled_for < $2
@@ -603,7 +603,7 @@ func (r *Repository) ListHistory(
 
 	// One more than asked for, so the presence of a next page is known without
 	// a second count query.
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+instanceColumns+`
 		 FROM medication_instances
 		 WHERE medication_id = $1
@@ -652,7 +652,7 @@ type ActParams struct {
 func (r *Repository) Act(ctx context.Context, params ActParams) (Instance, error) {
 	status := resultOf[params.Action]
 
-	instance, err := scanInstance(r.pool.QueryRow(ctx, `
+	instance, err := scanInstance(r.db.QueryRow(ctx, `
 		UPDATE medication_instances
 		SET status     = $2,
 		    taken_at   = CASE WHEN $2 = 'taken'   THEN now() ELSE taken_at END,
@@ -894,4 +894,11 @@ func optionalForm(form Form) *string {
 	}
 	value := string(form)
 	return &value
+}
+
+// WithTx returns a repository bound to tx, so a medication change and the care event
+// describing it are written through the same connection and commit together
+// (plans/phase7.md §26).
+func (r *Repository) WithTx(tx pgx.Tx) *Repository {
+	return &Repository{db: tx}
 }

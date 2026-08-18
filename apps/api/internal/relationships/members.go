@@ -62,7 +62,7 @@ func ToMemberResponse(member Member, readerUserID uuid.UUID) MemberResponse {
 // One query with a join rather than a membership list followed by a user lookup
 // per member (docs/11 forbids N+1 access patterns).
 func (r *Repository) ListMembers(ctx context.Context, seniorID uuid.UUID) ([]Member, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db.Query(ctx, `
 		SELECT cr.id, cr.senior_id, cr.user_id, cr.role, cr.permissions, cr.status,
 		       cr.created_at, cr.updated_at,
 		       u.display_name, coalesce(u.email, '')
@@ -117,7 +117,7 @@ func (r *Repository) ListMembers(ctx context.Context, seniorID uuid.UUID) ([]Mem
 
 // GetByID loads one relationship.
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (Relationship, error) {
-	relationship, err := scanRelationship(r.pool.QueryRow(ctx,
+	relationship, err := scanRelationship(r.db.QueryRow(ctx,
 		`SELECT `+relationshipColumns+` FROM care_relationships WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Relationship{}, ErrNotFound
@@ -137,7 +137,7 @@ func (r *Repository) UpdatePermissions(
 	id uuid.UUID,
 	permissions care.PermissionSet,
 ) (Relationship, error) {
-	relationship, err := scanRelationship(r.pool.QueryRow(ctx, `
+	relationship, err := scanRelationship(r.db.QueryRow(ctx, `
 		UPDATE care_relationships
 		SET permissions = $2
 		WHERE id = $1 AND status <> 'revoked'
@@ -159,7 +159,7 @@ func (r *Repository) UpdatePermissions(
 // membership stops granting access the moment status changes, because every
 // authorization check requires an active relationship.
 func (r *Repository) RevokeMembership(ctx context.Context, id uuid.UUID) (Relationship, error) {
-	relationship, err := scanRelationship(r.pool.QueryRow(ctx, `
+	relationship, err := scanRelationship(r.db.QueryRow(ctx, `
 		UPDATE care_relationships
 		SET status = 'revoked'
 		WHERE id = $1 AND status <> 'revoked'
