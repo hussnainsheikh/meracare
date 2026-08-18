@@ -17,12 +17,12 @@ var ErrNotFound = errors.New("invitation not found")
 
 // Repository reads and writes invitations.
 type Repository struct {
-	pool *database.Pool
+	db database.Querier
 }
 
 // NewRepository builds a Repository over the shared pool.
 func NewRepository(pool *database.Pool) *Repository {
-	return &Repository{pool: pool}
+	return &Repository{db: pool}
 }
 
 const invitationColumns = `id, senior_id, inviter_user_id, invitee_email, role, permissions,
@@ -46,7 +46,7 @@ var ErrAlreadyInvited = errors.New("an invitation is already pending for this pe
 
 // Create inserts an invitation.
 func (r *Repository) Create(ctx context.Context, params CreateParams) (Invitation, error) {
-	invitation, err := scanInvitation(r.pool.QueryRow(ctx, `
+	invitation, err := scanInvitation(r.db.QueryRow(ctx, `
 		INSERT INTO invitations (
 			senior_id, inviter_user_id, invitee_email, role, permissions, token_hash, expires_at
 		)
@@ -74,7 +74,7 @@ func (r *Repository) Create(ctx context.Context, params CreateParams) (Invitatio
 // A single indexed probe: the raw token is never compared in the database, and
 // never stored there to be compared against.
 func (r *Repository) FindByTokenHash(ctx context.Context, tokenHash []byte) (Invitation, error) {
-	invitation, err := scanInvitation(r.pool.QueryRow(ctx,
+	invitation, err := scanInvitation(r.db.QueryRow(ctx,
 		`SELECT `+invitationColumns+` FROM invitations WHERE token_hash = $1`, tokenHash))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Invitation{}, ErrNotFound
@@ -87,7 +87,7 @@ func (r *Repository) FindByTokenHash(ctx context.Context, tokenHash []byte) (Inv
 
 // GetByID loads one invitation.
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (Invitation, error) {
-	invitation, err := scanInvitation(r.pool.QueryRow(ctx,
+	invitation, err := scanInvitation(r.db.QueryRow(ctx,
 		`SELECT `+invitationColumns+` FROM invitations WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Invitation{}, ErrNotFound
@@ -100,7 +100,7 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (Invitation, err
 
 // ListForSenior returns a circle's invitations, newest first.
 func (r *Repository) ListForSenior(ctx context.Context, seniorID uuid.UUID) ([]Invitation, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+invitationColumns+` FROM invitations WHERE senior_id = $1 ORDER BY created_at DESC`,
 		seniorID)
 	if err != nil {
@@ -128,7 +128,7 @@ func (r *Repository) ListForSenior(ctx context.Context, seniorID uuid.UUID) ([]I
 // between accepting and revoking resolves in the database rather than in the
 // application: exactly one of the two wins.
 func (r *Repository) Revoke(ctx context.Context, id uuid.UUID) (Invitation, error) {
-	invitation, err := scanInvitation(r.pool.QueryRow(ctx, `
+	invitation, err := scanInvitation(r.db.QueryRow(ctx, `
 		UPDATE invitations
 		SET status = 'revoked', revoked_at = now()
 		WHERE id = $1 AND status = 'pending'
@@ -167,17 +167,12 @@ func (r *Repository) MarkAcceptedTx(
 	return invitation, nil
 }
 
-// BeginTx starts a transaction for acceptance, which spans two tables.
-func (r *Repository) BeginTx(ctx context.Context) (pgx.Tx, error) {
-	return r.pool.Begin(ctx)
-}
-
 // ExpirePending marks lapsed invitations expired.
 //
 // Housekeeping only: EffectiveStatus already treats a lapsed invitation as
 // expired, so correctness never depends on this having run.
 func (r *Repository) ExpirePending(ctx context.Context) (int64, error) {
-	tag, err := r.pool.Exec(ctx,
+	tag, err := r.db.Exec(ctx,
 		`UPDATE invitations SET status = 'expired' WHERE status = 'pending' AND expires_at <= now()`)
 	if err != nil {
 		return 0, fmt.Errorf("expire invitations: %w", err)
@@ -220,4 +215,11 @@ func scanInvitation(row rowScanner) (Invitation, error) {
 	invitation.Status = Status(status)
 	invitation.Permissions = care.PermissionsFromStrings(permissions)
 	return invitation, nil
+}
+
+// WithTx returns a repository bound to tx, so a invitation change and the care event
+// describing it are written through the same connection and commit together
+// (plans/phase7.md §26).
+func (r *Repository) WithTx(tx pgx.Tx) *Repository {
+	return &Repository{db: tx}
 }

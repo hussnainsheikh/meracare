@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/relationships"
 	"github.com/meracare/api/internal/seniors"
 )
@@ -30,11 +32,19 @@ type Service struct {
 	tasks   *Repository
 	seniors SeniorLookup
 	members MemberLookup
+	// events records what happened, in the same transaction as the change
+	// itself (plans/phase7.md §26).
+	events *careevents.Recorder
 }
 
 // NewService builds the service.
-func NewService(tasks *Repository, seniorLookup SeniorLookup, members MemberLookup) *Service {
-	return &Service{tasks: tasks, seniors: seniorLookup, members: members}
+func NewService(
+	tasks *Repository,
+	seniorLookup SeniorLookup,
+	members MemberLookup,
+	events *careevents.Recorder,
+) *Service {
+	return &Service{tasks: tasks, seniors: seniorLookup, members: members, events: events}
 }
 
 // ErrInvalidAssignee is returned when a task is assigned to somebody who is not
@@ -94,13 +104,23 @@ func (s *Service) Create(ctx context.Context, input CreateInput, now time.Time) 
 	}
 
 	if input.Recurrence == nil {
-		instance, err := s.tasks.CreateInstance(ctx, CreateInstanceParams{
-			SeniorID:        input.SeniorID,
-			CreatedByUserID: input.CreatedByUserID,
-			Title:           input.Title,
-			Description:     input.Description,
-			AssignedUserID:  input.AssignedUserID,
-			ScheduledFor:    *input.ScheduledFor,
+		var instance Instance
+		err := s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+			created, err := s.tasks.WithTx(tx).CreateInstance(ctx, CreateInstanceParams{
+				SeniorID:        input.SeniorID,
+				CreatedByUserID: input.CreatedByUserID,
+				Title:           input.Title,
+				Description:     input.Description,
+				AssignedUserID:  input.AssignedUserID,
+				ScheduledFor:    *input.ScheduledFor,
+			})
+			if err != nil {
+				return err
+			}
+			instance = created
+
+			return recordTaskCreated(
+				ctx, events, created.SeniorID, created.ID, created.Title, input.CreatedByUserID)
 		})
 		if err != nil {
 			return Created{}, err
@@ -108,14 +128,30 @@ func (s *Service) Create(ctx context.Context, input CreateInput, now time.Time) 
 		return Created{Instances: []Instance{instance}}, nil
 	}
 
-	template, err := s.tasks.CreateTemplate(ctx, CreateTemplateParams{
-		SeniorID:        input.SeniorID,
-		CreatedByUserID: input.CreatedByUserID,
-		Title:           input.Title,
-		Description:     input.Description,
-		AssignedUserID:  input.AssignedUserID,
-		Recurrence:      *input.Recurrence,
-		DueTime:         *input.DueTime,
+	// A recurring task is created once and produces occurrences afterwards, so
+	// the event is about the template: the circle decided on a routine, which
+	// is the thing that happened. The occurrences it generates are not each a
+	// separate event — nobody did anything when tomorrow's row was written, and
+	// a timeline full of them would bury the actions people actually took
+	// (plans/phase7.md §2, "do not create events for every database update").
+	var template Template
+	err := s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		created, err := s.tasks.WithTx(tx).CreateTemplate(ctx, CreateTemplateParams{
+			SeniorID:        input.SeniorID,
+			CreatedByUserID: input.CreatedByUserID,
+			Title:           input.Title,
+			Description:     input.Description,
+			AssignedUserID:  input.AssignedUserID,
+			Recurrence:      *input.Recurrence,
+			DueTime:         *input.DueTime,
+		})
+		if err != nil {
+			return err
+		}
+		template = created
+
+		return recordTaskCreated(
+			ctx, events, created.SeniorID, created.ID, created.Title, input.CreatedByUserID)
 	})
 	if err != nil {
 		return Created{}, err
@@ -348,29 +384,96 @@ type ActResult struct {
 // quietly, and a different outcome already recorded, which is refused so the
 // server's version stands (plans/phase4.md §§27–28).
 func (s *Service) Act(ctx context.Context, input ActInput) (ActResult, error) {
-	instance, err := s.tasks.Act(ctx, ActParams{
-		InstanceID: input.InstanceID,
-		Action:     input.Action,
-		ActorID:    input.ActorID,
-		Notes:      input.Notes,
+	var result ActResult
+
+	err := s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		tasks := s.tasks.WithTx(tx)
+
+		instance, err := tasks.Act(ctx, ActParams{
+			InstanceID: input.InstanceID,
+			Action:     input.Action,
+			ActorID:    input.ActorID,
+			Notes:      input.Notes,
+		})
+		if err == nil {
+			result = ActResult{Instance: instance}
+			return recordTaskAction(ctx, events, instance, input.Action, input.ActorID)
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+
+		current, err := tasks.GetInstance(ctx, input.InstanceID)
+		if err != nil {
+			return err
+		}
+
+		_, repeat, err := Transition(current.Status, input.Action)
+		if err != nil {
+			return err
+		}
+
+		// A repeat writes no second event. The state machine already decided
+		// that nothing happened this time, and that decision is exactly the
+		// idempotency the timeline needs: a completion replayed by the offline
+		// queue must not appear twice in the record (plans/phase7.md §20).
+		result = ActResult{Instance: current, Repeat: repeat}
+		return nil
 	})
-	if err == nil {
-		return ActResult{Instance: instance}, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
-		return ActResult{}, err
-	}
-
-	current, err := s.tasks.GetInstance(ctx, input.InstanceID)
 	if err != nil {
 		return ActResult{}, err
 	}
+	return result, nil
+}
 
-	_, repeat, err := Transition(current.Status, input.Action)
-	if err != nil {
-		return ActResult{}, err
+func recordTaskCreated(
+	ctx context.Context,
+	events *careevents.Repository,
+	seniorID, entityID uuid.UUID,
+	title string,
+	actorID uuid.UUID,
+) error {
+	_, err := events.Record(ctx, careevents.RecordParams{
+		SeniorID:    seniorID,
+		ActorUserID: &actorID,
+		Type:        careevents.TypeTaskCreated,
+		EntityType:  careevents.EntityTask,
+		EntityID:    entityID,
+		Metadata:    careevents.Metadata{careevents.MetaTaskTitle: title},
+	})
+	return err
+}
+
+// eventTypeFor maps a task action to the event it produces.
+var eventTypeFor = map[Action]careevents.Type{
+	ActionComplete: careevents.TypeTaskCompleted,
+	ActionSkip:     careevents.TypeTaskSkipped,
+}
+
+func recordTaskAction(
+	ctx context.Context,
+	events *careevents.Repository,
+	instance Instance,
+	action Action,
+	actorID uuid.UUID,
+) error {
+	eventType, ok := eventTypeFor[action]
+	if !ok {
+		return fmt.Errorf("no care event defined for task action %q", action)
 	}
-	return ActResult{Instance: current, Repeat: repeat}, nil
+
+	_, err := events.Record(ctx, careevents.RecordParams{
+		SeniorID:    instance.SeniorID,
+		ActorUserID: &actorID,
+		Type:        eventType,
+		EntityType:  careevents.EntityTask,
+		EntityID:    instance.ID,
+		// The title as it reads now, copied rather than referenced: renaming
+		// the task next month must not rewrite what this entry says happened
+		// (plans/phase7.md §5).
+		Metadata: careevents.Metadata{careevents.MetaTaskTitle: instance.Title},
+	})
+	return err
 }
 
 // UpdateInstanceInput edits a single occurrence.

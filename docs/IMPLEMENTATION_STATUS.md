@@ -1,10 +1,10 @@
 # Implementation Status
 
-Last updated: 2026-08-17
+Last updated: 2026-08-19
 
 ## Current Phase
 
-**Phase 6 — Appointments & Care Schedule: complete.** Next up is Phase 7.
+**Phase 7 — Care Events & Activity Timeline: complete.** Next up is Phase 8.
 
 ## Verification Is Local
 
@@ -47,9 +47,11 @@ apps/
       auth/                Supabase JWT verification, Principal, RequireAuth
       authz/               relationship-based authorization middleware + guard
       care/                roles, permissions, statuses, defaults, delegation
+      careevents/          one timeline across every domain; recorder + activity
       config/              environment configuration
-      database/            pgx pool, embedded migrations + runner, error helpers
-        migrations/        0001_init … 0006_appointments
+      database/            pgx pool, embedded migrations + runner, error helpers,
+                           Querier and InTx for transactional writes
+        migrations/        0001_init … 0007_care_events
       invitations/         tokens, lifecycle, accept; /v1/invitations
       medications/         medicines, schedules, doses; /v1/medications
       members/             care-circle membership; /v1/seniors/{id}/members
@@ -67,12 +69,13 @@ apps/
       validation/          request validation helpers
   mobile/                  Expo SDK 57 / React Native 0.86 / Expo Router
     src/
-      app/                 index, sign-in, home, onboarding, seniors/[id]/*,
-                           appointments/[id]/*, medications/[id]/*, tasks/[id],
-                           invitations/[token]
-      components/ui/       AppointmentCard, Button, Card, MedicationCard,
-                           OptionCard, PermissionToggle, Screen, TaskCard, Text,
-                           TextField
+      app/                 index, sign-in, home, onboarding, seniors/[id]/*
+                           (incl. activity), appointments/[id]/*,
+                           medications/[id]/*, tasks/[id], invitations/[token]
+      components/ui/       ActivityRow, AppointmentCard, Button, Card,
+                           MedicationCard, OptionCard, PermissionToggle, Screen,
+                           TaskCard, Text, TextField
+      features/activity/   activity timeline query
       features/appointments/ appointment queries and mutations
       features/auth/       session restore, sign in/up/out
       features/circle/     members, invitations, accept
@@ -310,6 +313,57 @@ docker-compose.yml         local PostgreSQL for development and tests
 - Mobile: `tsc --noEmit` clean, `expo lint` clean, 150 Jest tests pass across 16
   suites, Prettier clean.
 
+## Completed — Phase 7
+
+| Area | Where |
+|------|-------|
+| CareEvent domain | `internal/careevents/event.go` — vocabulary, entity kinds, metadata |
+| Recorder | `internal/careevents/recorder.go` — one transaction boundary for every domain |
+| Transaction plumbing | `internal/database/transaction.go` — `Querier` and `InTx`; repositories gained `WithTx` |
+| Activity API | `GET /v1/seniors/{id}/activity?cursor=&limit=` — keyset paged, newest first |
+| Task events | `TASK_CREATED`, `TASK_COMPLETED`, `TASK_SKIPPED` |
+| Medication events | `MEDICATION_CREATED`, `MEDICATION_TAKEN`, `MEDICATION_SKIPPED` |
+| Appointment events | `APPOINTMENT_CREATED`, `APPOINTMENT_COMPLETED`, `APPOINTMENT_CANCELLED` |
+| Care-circle events | `MEMBER_INVITED`, `MEMBER_JOINED`, `MEMBER_REVOKED` |
+| Database | migration `0007_care_events` |
+| Rendering | `packages/contracts/src/care-event-labels.ts` — one place for every sentence |
+| Mobile | activity timeline, grouped by the senior's day, paged, with empty/loading/error states |
+
+### Verified end to end
+
+- `go test -race -count=1 ./...` green across 20 packages.
+- All seven migrations applied to a brand-new database, then the whole suite
+  re-run against it.
+- Every Phase 2–6 test still passes unchanged with events now being written
+  inside their transactions, which is the strongest evidence the integration did
+  not alter domain behaviour.
+- Transactional consistency is tested in both directions: an event the database
+  refuses rolls back the appointment that was written beside it, and an
+  appointment the database refuses leaves no event behind.
+- Retrying a completion three times produces one `TASK_COMPLETED`. The existing
+  state machine already reports the second attempt as a repeat, and the event is
+  written only when it is not — so no second idempotency mechanism exists.
+- A refused action records nothing: skipping an already-completed task returns
+  `CONFLICT` and writes no `TASK_SKIPPED`.
+- A recurring task writes one `TASK_CREATED`, not one per generated occurrence.
+- The keyset cursor walks seven events — four sharing a single instant — in
+  pages of two, and every one appears exactly once.
+- Authorization is tested rather than asserted: a stranger gets the same 404 for
+  a senior with activity and one that does not exist; a member holding
+  everything except `activity.view` gets 404; a revoked member who could read
+  the timeline a moment earlier gets 404 afterwards; one circle's events never
+  appear in another's.
+- There is no way to fabricate an event: `POST /v1/care-events`, and POST, PUT
+  and DELETE against the activity route, are all refused, and the timeline is
+  verified empty afterwards.
+- The database refuses an undocumented event type and an unrecognised entity
+  type. A test also reads the migration and asserts the CHECK constraint lists
+  exactly the Go vocabulary, so the two cannot drift.
+- A test asserts that no code path emits the three documented-but-unemitted
+  types, so "not yet" cannot quietly become "nobody noticed".
+- Mobile: `tsc --noEmit` clean, `expo lint` clean, 169 Jest tests across 18
+  suites, Prettier clean.
+
 ## Architectural Decisions Taken in Phase 1
 
 These are implementation choices within the locked architecture — nothing in
@@ -430,15 +484,47 @@ docs/12 or docs/17 was changed.
 
 ## Blockers
 
-1. **The real sign-in round trip is still unexercised.** The project at
-   `https://axrfytnnnabjdnmwnese.supabase.co` exists and signs with an ES256
-   key, which the API loads successfully at startup, and
-   `EXPO_PUBLIC_SUPABASE_ANON_KEY` is now set in `apps/mobile/.env`. What has
-   still never been run is the round trip itself: a genuine Supabase-issued
-   token resolving through `/v1/me` to an application user. Every test to date
-   substitutes a stub verifier for Supabase, so the seam between them is the one
-   part of authentication nothing has proved.
-2. **Brand assets are still the Expo template placeholders.** `assets/images`
+1. **The real sign-in round trip is still unexercised — blocked on email
+   confirmation.** Phase 7 attempted it (plans/phase7.md §32). What was
+   established, and what was not:
+
+   - The JWKS endpoint is reachable and publishes an ES256 key.
+   - The API, booted in asymmetric mode against the real project, logs
+     `loaded Supabase signing keys` at startup, answers `/readyz` 200, and
+     rejects both a missing and a forged bearer token with 401
+     `UNAUTHENTICATED`. So the API genuinely verifies against the live
+     project's published keys.
+   - **What could not be done:** obtain a genuine token. The project requires
+     email confirmation. A sign-up through `/auth/v1/signup` with the anon key
+     returns 200 but no session, and the password grant then fails with
+     `email_not_confirmed`. Confirming requires access to the recipient inbox,
+     and minting or confirming a user directly would need the `service_role`
+     key, which is deliberately not available here.
+   - Steps 4 and 5 of §32 — the token resolving to the correct application user,
+     and that same context reaching an authorized activity request — therefore
+     remain **unverified**. They are not claimed.
+
+   **To close it**, one of: disable email confirmation for the project (Auth →
+   Providers → Email) and re-run the check; or confirm a real address and sign
+   in with it once. Either takes a few minutes and needs no code change.
+
+   Note: an unconfirmed account `phase7.verification@gmail.com` was created in
+   the Supabase project during this attempt. It has no session and no
+   application user, but it can be deleted from the Auth dashboard.
+2. **`DATABASE_URL` points at the Supabase direct connection, which is
+   unreachable from this machine.** `db.<ref>.supabase.co:5432` resolves to an
+   IPv6 address only and every attempt fails with "no route to host", so
+   `pnpm api:migrate` and the API cannot use it here. Nothing about the
+   architecture is wrong — the direct connection is simply IPv6-only, and this
+   network has no IPv6 route. The **session pooler** hostname works over IPv4
+   and is the intended setting; it needs the database password, which must go
+   straight into `apps/api/.env` and never into a commit or a chat.
+
+   Phase 7 did not change this (plans/phase7.md §33). All local verification
+   used the container from `docker-compose.yml`, and migrations `0001`–`0007`
+   have therefore **not** been applied to the hosted project yet.
+
+3. **Brand assets are still the Expo template placeholders.** `assets/images`
    holds the generated icon/splash. Real MeraCare icon, splash, and the first
    unDraw/Storyset illustrations are needed, along with `ASSET_LICENSES.md`
    (docs/18).
@@ -691,6 +777,102 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
     mistake. The confirmation is an inline card rather than a platform alert, so
     it is large, readable, and behaves the same on both platforms.
 
+## Architectural Decisions Taken in Phase 7
+
+1. **One timeline, one table.** A family member asking "what happened
+   yesterday?" is asking about their relative, not about tasks. Per-domain
+   activity feeds would answer a question nobody has and would have to be merged
+   in the client to answer the one everybody does.
+
+2. **Events do not replace domain history.** The medication history still says
+   what happened to every dose in medication's own terms, and the appointment
+   history still pages through appointments. The timeline says what happened in
+   the care, in the circle's terms. Both were kept; neither was rebuilt on the
+   other.
+
+3. **The vocabulary is the documentation's, and there is now only one.** A
+   speculative list had stood in `packages/contracts/src/care.ts` since Phase 1,
+   written before any of these domains existed. It had drifted — `MEMBER_REMOVED`
+   for what the domain calls revoking, plus `APPOINTMENT_UPDATED` and
+   `PERMISSIONS_CHANGED`, which docs/03 does not name and no action emits — and
+   it was missing every creation event. Two vocabularies is exactly the parallel
+   naming system the brief forbids, so the documented one was kept and the
+   placeholder deleted. Nothing referenced it. **This is a deliberate change to
+   a Phase 1 artefact**, recorded here rather than made silently.
+
+4. **Three documented types are deliberately never emitted.** `TASK_MISSED` and
+   `MEDICATION_MISSED` are derived from the clock, not performed by anybody —
+   nothing writes "missed" anywhere in the system, precisely so no background
+   sweep has to be alive for the data to be true (Phases 4 and 5). Emitting them
+   would mean inventing the sweep those phases refused; they belong to Phase 8,
+   where a notification is the thing that actually happens and has a time.
+   `NOTE_ADDED` has no domain yet. All three stay in the vocabulary because the
+   vocabulary is the documentation's, and a test asserts no code path produces
+   one.
+
+5. **A transaction, not a broker.** `careevents.Recorder` runs the domain change
+   and its event in one PostgreSQL transaction. A completion with no event is a
+   gap nobody would notice; an event with no completion is a timeline that lies.
+   Kafka, NATS and the rest are ruled out by docs/12 and the brief, and would in
+   any case give up the one guarantee that matters here — atomicity with the
+   domain write.
+
+6. **Repositories hold a `Querier`, not a pool.** `internal/database.Querier` is
+   the subset shared by `pgxpool.Pool` and `pgx.Tx`, so one method body serves
+   an ordinary request and a transactional one, and every repository gained a
+   `WithTx`. That is what let five domains join a transaction without each
+   growing a parallel set of `...Tx` methods. The invitation flow's bespoke
+   `BeginTx` was removed in favour of the shared boundary, so there is now one
+   way to start a transaction rather than two.
+
+7. **Idempotency is the existing state machine, reused.** Tasks, doses and
+   appointments already report a repeated action as a repeat rather than an
+   error, which is what makes the offline queue safe. The event is written only
+   when the action was not a repeat. No new idempotency mechanism exists,
+   because the one that was already there answers exactly the right question.
+
+8. **Metadata is a flat map of short labels, copied not referenced.** A task's
+   title is stored on the event so that renaming the task next month does not
+   rewrite what last week's entry says happened — which is what makes it a
+   historical record. A CHECK constraint refuses anything that is not a JSON
+   object, so it cannot drift into a copy of the row. Nothing sensitive goes in.
+
+9. **The server sends no sentences.** The response carries the type, the actor,
+   the instant and the metadata; every word a person reads is chosen in
+   `care-event-labels.ts`. Wording can then change without a data migration, and
+   a timeline entry cannot disagree with a future notification saying the same
+   thing.
+
+10. **`activity.view`, which docs/02 already defines.** No permission was
+    invented. Family members and professional caregivers hold it by default, and
+    a circle can withhold it from an individual relationship — which is tested.
+
+11. **One index, `(senior_id, occurred_at DESC, id DESC)`.** `id` is in the
+    index because events routinely share an instant: a domain change and its
+    event are written in the same transaction, and a drained offline queue
+    writes several at once. A timestamp-only cursor would drop or repeat one at
+    every page boundary. Nothing filters by event type or actor, so neither is
+    indexed.
+
+12. **No `updated_at`, no `Update`, no `Delete`.** The table has no edit
+    timestamp and the repository has no method to change a row. The absence is
+    the enforcement.
+
+13. **`actor_user_id` is nullable, and `ON DELETE SET NULL`.** NULL is reserved
+    for an event no person performed; nothing fabricates a user to fill it. The
+    event outlives the account that caused it, because losing the name is a
+    smaller loss than losing the record.
+
+14. **Category in words rather than an icon.** Each row carries "Task",
+    "Medication", "Appointment" or "Care circle" as a caption. It fills the slot
+    an icon would, and it is legible to somebody who cannot make out a
+    sixteen-pixel glyph — which matters more here than iconography. The brand
+    icon set is still outstanding regardless (see Blockers).
+
+15. **The feed is deliberately quiet.** Most rows are neutral. A timeline where
+    every entry is coloured is one where nothing stands out, and most care
+    activity is ordinary — somebody did what they said they would.
+
 ## Deferred, and why
 
 - **Care events.** Inviting and joining are `MEMBER_INVITED` and `MEMBER_JOINED`
@@ -757,10 +939,37 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
   appointments overlap. It is a real convenience and no part of the brief; it
   needs a product decision about whether overlapping is an error or a fact.
 
-## Next Tasks (Phase 7 — care events and activity timeline)
+- **Care events for editing** (Phase 7). Editing a task, a medication or an
+  appointment records nothing. docs/03 names no such event, and the brief is
+  explicit that not every database update deserves one — a timeline of every
+  field change is a changelog, not an account of care. If a later phase wants
+  "Sarah moved Thursday's appointment", it is one event type and one call.
+- **Permission changes in the timeline** (Phase 7). The Phase 1 placeholder had
+  a `PERMISSIONS_CHANGED` name, but no documentation defines it and docs/02
+  files permission changes under auditability rather than activity. Membership
+  events are recorded; changing what an existing member may do is not.
+- **Cached activity offline** (Phase 7). The brief permits it ("where
+  appropriate") rather than requiring it, and it was left out: the timeline is a
+  record of the past that is never acted on, so a stale copy has none of the
+  value that today's medication list has to somebody standing in a house with no
+  signal. Nothing was queued either, which the brief does require.
+- **Filtering the timeline** (Phase 7). No filter by domain, actor or date
+  range. Nothing in the documentation asks for one, and the index is deliberately
+  sized for the query that exists rather than for queries nobody makes.
+- **Actor names in the response** (Phase 7). The API sends `actorUserId` and the
+  client resolves it from the care-circle list it already holds, in one lookup
+  built per render. That avoids a join on the hot path; if a later screen needs
+  activity without the member list, the join is the obvious next step.
 
-Not started. Per the Phase 6 brief, work stops here pending Phase 7
+## Next Tasks (Phase 8 — notifications and background work)
+
+Not started. Per the Phase 7 brief, work stops here pending Phase 8
 instructions.
+
+Phase 8 has an unusually clear starting point: `TASK_MISSED` and
+`MEDICATION_MISSED` are already in the vocabulary and deliberately unemitted,
+and every fact a reminder needs — the senior's timezone, the scheduled instant,
+the assignee — is already stored.
 
 ## Running It
 

@@ -21,12 +21,12 @@ var ErrBadCursor = paging.ErrBadCursor
 
 // Repository reads and writes appointments.
 type Repository struct {
-	pool *database.Pool
+	db database.Querier
 }
 
 // NewRepository builds a Repository over the shared pool.
 func NewRepository(pool *database.Pool) *Repository {
-	return &Repository{pool: pool}
+	return &Repository{db: pool}
 }
 
 const appointmentColumns = `id, senior_id, created_by_user_id, title, kind,
@@ -54,7 +54,7 @@ type CreateParams struct {
 
 // Create inserts an appointment.
 func (r *Repository) Create(ctx context.Context, params CreateParams) (Appointment, error) {
-	appointment, err := scanAppointment(r.pool.QueryRow(ctx, `
+	appointment, err := scanAppointment(r.db.QueryRow(ctx, `
 		INSERT INTO appointments (
 			senior_id, created_by_user_id, title, kind, provider_name, location,
 			notes, assigned_user_id, scheduled_at, ends_at
@@ -80,7 +80,7 @@ func (r *Repository) Create(ctx context.Context, params CreateParams) (Appointme
 
 // Get loads one appointment.
 func (r *Repository) Get(ctx context.Context, id uuid.UUID) (Appointment, error) {
-	appointment, err := scanAppointment(r.pool.QueryRow(ctx,
+	appointment, err := scanAppointment(r.db.QueryRow(ctx,
 		`SELECT `+appointmentColumns+` FROM appointments WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Appointment{}, ErrNotFound
@@ -103,7 +103,7 @@ func (r *Repository) ListWindow(
 	from, to time.Time,
 	limit int,
 ) ([]Appointment, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+appointmentColumns+`
 		 FROM appointments
 		 WHERE senior_id = $1 AND scheduled_at >= $2 AND scheduled_at < $3
@@ -149,7 +149,7 @@ func (r *Repository) ListBefore(
 
 	// One more than asked for, so the presence of a next page is known without
 	// a second count query.
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+appointmentColumns+`
 		 FROM appointments
 		 WHERE senior_id = $1
@@ -222,7 +222,7 @@ func (r *Repository) Update(
 		kind = &value
 	}
 
-	appointment, err := scanAppointment(r.pool.QueryRow(ctx, `
+	appointment, err := scanAppointment(r.db.QueryRow(ctx, `
 		UPDATE appointments
 		SET title            = COALESCE($2, title),
 		    provider_name    = COALESCE($3, provider_name),
@@ -274,7 +274,7 @@ type ActParams struct {
 func (r *Repository) Act(ctx context.Context, params ActParams) (Appointment, error) {
 	status := resultOf[params.Action]
 
-	appointment, err := scanAppointment(r.pool.QueryRow(ctx, `
+	appointment, err := scanAppointment(r.db.QueryRow(ctx, `
 		UPDATE appointments
 		SET status       = $2,
 		    completed_at = CASE WHEN $2 = 'completed' THEN now() ELSE completed_at END,
@@ -363,4 +363,11 @@ func optionalKind(kind Kind) *string {
 	}
 	value := string(kind)
 	return &value
+}
+
+// WithTx returns a repository bound to tx, so a appointment change and the care event
+// describing it are written through the same connection and commit together
+// (plans/phase7.md §26).
+func (r *Repository) WithTx(tx pgx.Tx) *Repository {
+	return &Repository{db: tx}
 }

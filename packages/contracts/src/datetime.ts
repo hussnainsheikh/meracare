@@ -43,3 +43,31 @@ export function dateInTimezone(instant: string, timezone: string): string {
     month: 'long',
   });
 }
+
+/**
+ * The calendar date an instant falls on in a timezone, as `YYYY-MM-DD`.
+ *
+ * Used to group a timeline by day. It has to be computed in the senior's zone
+ * rather than from the UTC date: an event at 00:30 in Karachi is 19:30 the
+ * previous day in UTC, and grouping by the latter would file it under
+ * yesterday for everyone (plans/phase7.md §§13, 16).
+ */
+export function dateKeyInTimezone(instant: string, timezone: string): string {
+  const at = new Date(instant);
+
+  try {
+    // en-CA renders as YYYY-MM-DD, which sorts and compares as a string.
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(at);
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(at);
+  }
+}

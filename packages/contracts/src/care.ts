@@ -41,19 +41,14 @@ export const CARE_PERMISSIONS = [
 ] as const;
 export type CarePermission = (typeof CARE_PERMISSIONS)[number];
 
-/** Immutable events that drive the activity timeline (`docs/04-...`). */
-export const CARE_EVENT_TYPES = [
-  'TASK_COMPLETED',
-  'TASK_MISSED',
-  'TASK_SKIPPED',
-  'MEDICATION_TAKEN',
-  'MEDICATION_MISSED',
-  'APPOINTMENT_CREATED',
-  'APPOINTMENT_UPDATED',
-  'NOTE_ADDED',
-  'MEMBER_INVITED',
-  'MEMBER_JOINED',
-  'MEMBER_REMOVED',
-  'PERMISSIONS_CHANGED',
-] as const;
-export type CareEventType = (typeof CARE_EVENT_TYPES)[number];
+/**
+ * The care event vocabulary lives in `care-event.ts`.
+ *
+ * A speculative list stood here from Phase 1, written before any of these
+ * domains existed. It had drifted from the documentation in three places —
+ * `MEMBER_REMOVED` for what the domain calls revoking, plus `APPOINTMENT_UPDATED`
+ * and `PERMISSIONS_CHANGED`, which docs/03 does not name and which no action
+ * emits — and it was missing every creation event. Two vocabularies is the
+ * parallel naming system plans/phase7.md §2 forbids, so Phase 7 kept the
+ * documented one and deleted this. Nothing referenced it.
+ */

@@ -11,7 +11,9 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/meracare/api/internal/care"
+	"github.com/meracare/api/internal/careevents"
 	"github.com/meracare/api/internal/relationships"
 )
 
@@ -42,11 +44,14 @@ func (e *EscalationError) Unwrap() error { return ErrPermissionEscalation }
 // Service manages care-circle membership.
 type Service struct {
 	relationships *relationships.Repository
+	// events records what happened, in the same transaction as the change
+	// itself (plans/phase7.md §26).
+	events *careevents.Recorder
 }
 
 // NewService builds the service.
-func NewService(relationshipRepo *relationships.Repository) *Service {
-	return &Service{relationships: relationshipRepo}
+func NewService(relationshipRepo *relationships.Repository, events *careevents.Recorder) *Service {
+	return &Service{relationships: relationshipRepo, events: events}
 }
 
 // List returns the senior's active care circle.
@@ -96,6 +101,7 @@ func (s *Service) Revoke(
 	ctx context.Context,
 	seniorID uuid.UUID,
 	relationshipID uuid.UUID,
+	actorID uuid.UUID,
 ) (relationships.Relationship, error) {
 	target, err := s.load(ctx, seniorID, relationshipID)
 	if err != nil {
@@ -106,7 +112,56 @@ func (s *Service) Revoke(
 		return relationships.Relationship{}, ErrCannotModifySenior
 	}
 
-	return s.relationships.RevokeMembership(ctx, target.ID)
+	// The name is read before the revocation so the event can say who was
+	// removed. Reading it afterwards would work too, but this way the event
+	// carries the name they had while they were a member, which is what the
+	// timeline entry is about.
+	name := s.memberName(ctx, seniorID, target.UserID)
+
+	var revoked relationships.Relationship
+	err = s.events.InTransaction(ctx, func(tx pgx.Tx, events *careevents.Repository) error {
+		updated, err := s.relationships.WithTx(tx).RevokeMembership(ctx, target.ID)
+		if err != nil {
+			return err
+		}
+		revoked = updated
+
+		_, err = events.Record(ctx, careevents.RecordParams{
+			SeniorID:    seniorID,
+			ActorUserID: &actorID,
+			Type:        careevents.TypeMemberRevoked,
+			EntityType:  careevents.EntityRelationship,
+			EntityID:    updated.ID,
+			Metadata: careevents.Metadata{
+				careevents.MetaMemberName: name,
+				careevents.MetaRole:       string(updated.Role),
+			},
+		})
+		return err
+	})
+	if err != nil {
+		return relationships.Relationship{}, err
+	}
+	return revoked, nil
+}
+
+// memberName finds a member's display name for an event's metadata.
+//
+// A failure here is not worth failing the revocation over: the event is more
+// useful with a name and still useful without one, and refusing to remove
+// somebody from a care circle because their name could not be read would be a
+// worse outcome than an entry that reads "Somebody".
+func (s *Service) memberName(ctx context.Context, seniorID, userID uuid.UUID) string {
+	members, err := s.relationships.ListMembers(ctx, seniorID)
+	if err != nil {
+		return ""
+	}
+	for _, member := range members {
+		if member.Relationship.UserID == userID {
+			return member.DisplayName
+		}
+	}
+	return ""
 }
 
 // load fetches a membership and confirms it belongs to the senior in the URL.

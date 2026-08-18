@@ -16,12 +16,12 @@ var ErrNotFound = errors.New("task not found")
 
 // Repository reads and writes care tasks.
 type Repository struct {
-	pool *database.Pool
+	db database.Querier
 }
 
 // NewRepository builds a Repository over the shared pool.
 func NewRepository(pool *database.Pool) *Repository {
-	return &Repository{pool: pool}
+	return &Repository{db: pool}
 }
 
 // due_time is read as text rather than a driver time type: it is a wall-clock
@@ -54,7 +54,7 @@ type CreateTemplateParams struct {
 
 // CreateTemplate inserts a recurring task definition.
 func (r *Repository) CreateTemplate(ctx context.Context, params CreateTemplateParams) (Template, error) {
-	template, err := scanTemplate(r.pool.QueryRow(ctx, `
+	template, err := scanTemplate(r.db.QueryRow(ctx, `
 		INSERT INTO care_task_templates (
 			senior_id, created_by_user_id, title, description, assigned_user_id,
 			recurrence_rule, due_time
@@ -77,7 +77,7 @@ func (r *Repository) CreateTemplate(ctx context.Context, params CreateTemplatePa
 
 // GetTemplate loads one template.
 func (r *Repository) GetTemplate(ctx context.Context, id uuid.UUID) (Template, error) {
-	template, err := scanTemplate(r.pool.QueryRow(ctx,
+	template, err := scanTemplate(r.db.QueryRow(ctx,
 		`SELECT `+templateColumns+` FROM care_task_templates WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Template{}, ErrNotFound
@@ -90,7 +90,7 @@ func (r *Repository) GetTemplate(ctx context.Context, id uuid.UUID) (Template, e
 
 // ListActiveTemplates returns a senior's live recurring tasks.
 func (r *Repository) ListActiveTemplates(ctx context.Context, seniorID uuid.UUID) ([]Template, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+templateColumns+`
 		 FROM care_task_templates
 		 WHERE senior_id = $1 AND active
@@ -149,7 +149,7 @@ func (r *Repository) UpdateTemplate(
 		dueTime = &at
 	}
 
-	template, err := scanTemplate(r.pool.QueryRow(ctx, `
+	template, err := scanTemplate(r.db.QueryRow(ctx, `
 		UPDATE care_task_templates
 		SET title           = COALESCE($2, title),
 		    description     = COALESCE($3, description),
@@ -192,7 +192,7 @@ type CreateInstanceParams struct {
 
 // CreateInstance inserts a one-time task: an occurrence with no template.
 func (r *Repository) CreateInstance(ctx context.Context, params CreateInstanceParams) (Instance, error) {
-	instance, err := scanInstance(r.pool.QueryRow(ctx, `
+	instance, err := scanInstance(r.db.QueryRow(ctx, `
 		INSERT INTO care_task_instances (
 			senior_id, created_by_user_id, title, description, assigned_user_id, scheduled_for
 		)
@@ -226,7 +226,7 @@ func (r *Repository) Materialise(
 		return nil
 	}
 
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.db.Exec(ctx, `
 		INSERT INTO care_task_instances (
 			template_id, senior_id, created_by_user_id, title, description,
 			assigned_user_id, scheduled_for
@@ -260,7 +260,7 @@ func (r *Repository) DiscardFuturePending(
 	templateID uuid.UUID,
 	after time.Time,
 ) (int64, error) {
-	tag, err := r.pool.Exec(ctx, `
+	tag, err := r.db.Exec(ctx, `
 		DELETE FROM care_task_instances
 		WHERE template_id = $1 AND status = 'pending' AND scheduled_for > $2`,
 		templateID, after)
@@ -272,7 +272,7 @@ func (r *Repository) DiscardFuturePending(
 
 // GetInstance loads one occurrence.
 func (r *Repository) GetInstance(ctx context.Context, id uuid.UUID) (Instance, error) {
-	instance, err := scanInstance(r.pool.QueryRow(ctx,
+	instance, err := scanInstance(r.db.QueryRow(ctx,
 		`SELECT `+instanceColumns+` FROM care_task_instances WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Instance{}, ErrNotFound
@@ -289,7 +289,7 @@ func (r *Repository) ListWindow(
 	seniorID uuid.UUID,
 	from, to time.Time,
 ) ([]Instance, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+instanceColumns+`
 		 FROM care_task_instances
 		 WHERE senior_id = $1 AND scheduled_for >= $2 AND scheduled_for < $3
@@ -311,7 +311,7 @@ func (r *Repository) ListOverdue(
 	now time.Time,
 	limit int,
 ) ([]Instance, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+instanceColumns+`
 		 FROM care_task_instances
 		 WHERE senior_id = $1 AND status = 'pending' AND scheduled_for < $2
@@ -338,7 +338,7 @@ func (r *Repository) ListAssignedToUser(
 	userID uuid.UUID,
 	from, to time.Time,
 ) ([]Instance, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+instanceColumnsAliased+`
 		 FROM care_task_instances i
 		 JOIN care_relationships cr
@@ -380,7 +380,7 @@ type ActParams struct {
 func (r *Repository) Act(ctx context.Context, params ActParams) (Instance, error) {
 	status := resultOf[params.Action]
 
-	instance, err := scanInstance(r.pool.QueryRow(ctx, `
+	instance, err := scanInstance(r.db.QueryRow(ctx, `
 		UPDATE care_task_instances
 		SET status       = $2,
 		    completed_at = CASE WHEN $2 = 'completed' THEN now() ELSE completed_at END,
@@ -419,7 +419,7 @@ func (r *Repository) UpdateInstance(
 	id uuid.UUID,
 	params UpdateInstanceParams,
 ) (Instance, error) {
-	instance, err := scanInstance(r.pool.QueryRow(ctx, `
+	instance, err := scanInstance(r.db.QueryRow(ctx, `
 		UPDATE care_task_instances
 		SET title         = COALESCE($2, title),
 		    description   = COALESCE($3, description),
@@ -538,4 +538,11 @@ func collectInstances(rows pgx.Rows) ([]Instance, error) {
 		return nil, fmt.Errorf("read tasks: %w", err)
 	}
 	return found, nil
+}
+
+// WithTx returns a repository bound to tx, so a task change and the care event
+// describing it are written through the same connection and commit together
+// (plans/phase7.md §26).
+func (r *Repository) WithTx(tx pgx.Tx) *Repository {
+	return &Repository{db: tx}
 }
