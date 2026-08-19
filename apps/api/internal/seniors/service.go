@@ -110,8 +110,10 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, input Cr
 		SeniorID: senior.ID,
 		UserID:   principal.UserID,
 		Role:     role,
-		// Permissions come from the role's defaults, never from the client.
-		Permissions: care.Normalise(care.DefaultPermissions(role)),
+		// Permissions come from the role's defaults, never from the client —
+		// plus circle administration, which the person setting the circle up
+		// must have. See coordinatorPermissions.
+		Permissions: coordinatorPermissions(role),
 		Status:      care.StatusActive,
 	})
 	if err != nil {
@@ -123,6 +125,29 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, input Cr
 	}
 
 	return Membership{Senior: senior, Relationship: relationship}, nil
+}
+
+// coordinatorPermissions is the creator's permission set: their role's
+// defaults, plus members.manage.
+//
+// Without the addition a family circle has nobody who can ever revoke anybody.
+// A daughter who sets up her mother's care is a family member, and
+// members.manage is deliberately not a family-member default (docs/02 — a
+// relative who is invited to help should not be able to remove the person who
+// invited them). But the mother has no account to hold it either, and an
+// invitation can only delegate permissions the inviter already has, so the
+// permission could never enter the circle by any route. The result was that a
+// caregiver's access to somebody's medical information could be granted and
+// never withdrawn.
+//
+// Granting it to the creator rather than to the role keeps the distinction
+// docs/01 asks for — creator, senior, member, permission are four different
+// things — and, because it is stored on the relationship like every other
+// permission, coordination can later be handed to somebody else by granting it
+// to them, which is the transfer that same section anticipates. Solo Mode
+// already had it: the senior's own role carries members.manage.
+func coordinatorPermissions(role care.Role) care.PermissionSet {
+	return care.Normalise(append(care.DefaultPermissions(role), care.PermissionMembersManage))
 }
 
 // List returns every senior the caller can currently reach.

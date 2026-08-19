@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query';
+import { QueryCache, QueryClient } from '@tanstack/react-query';
 
 import { ApiError } from './api-error';
 
@@ -9,7 +9,37 @@ import { ApiError } from './api-error';
  * failures that are worth retrying, and keep data usable while it refreshes.
  */
 export function createQueryClient(): QueryClient {
-  return new QueryClient({
+  // Losing access to a senior is not an error the screen that noticed should
+  // handle alone. A caregiver revoked while the app is open keeps whatever was
+  // already fetched — their name in the list on Today, yesterday's medication
+  // — until something asks again. This watches every query for the API saying
+  // no, and drops that senior from the cache when it does
+  // (plans/phase9.md §14).
+  const queryCache = new QueryCache({
+    onError: (error, query) => {
+      if (!(error instanceof ApiError)) return;
+      // 404 is what a denial looks like: the API answers the same for a senior
+      // that does not exist and one the caller may not see, deliberately
+      // (docs/02-permissions-and-authorization.md). 401 is an expired session.
+      if (error.status !== 404 && error.status !== 401) return;
+
+      const [root, seniorId] = query.queryKey;
+      if (root !== 'seniors' || typeof seniorId !== 'string') return;
+
+      // Only what nothing is currently watching. A mounted screen keeps its own
+      // query so it can render its own "not available" message; removing it
+      // would make its observer refetch, fail again, and arrive back here —
+      // a loop that would hammer the API for as long as the screen stayed open.
+      client.removeQueries({ queryKey: ['seniors', seniorId], type: 'inactive' });
+
+      // The list is now wrong too, and refetching it is safe: it answers 200
+      // with the senior simply absent, so it cannot re-enter this handler.
+      void client.invalidateQueries({ queryKey: ['seniors'], exact: true });
+    },
+  });
+
+  const client = new QueryClient({
+    queryCache,
     defaultOptions: {
       queries: {
         staleTime: 30_000,
@@ -23,10 +53,12 @@ export function createQueryClient(): QueryClient {
         },
       },
       mutations: {
-        // Mutations are retried deliberately by the sync queue in Phase 11,
-        // not blindly here.
+        // Mutations are retried deliberately by the offline sync queue, not
+        // blindly here.
         retry: false,
       },
     },
   });
+
+  return client;
 }

@@ -1,3 +1,4 @@
+import type { Href } from 'expo-router';
 import { create } from 'zustand';
 
 /**
@@ -15,6 +16,22 @@ interface UIState {
   hasCompletedOnboarding: boolean;
   setHasCompletedOnboarding: (completed: boolean) => void;
 
+  /**
+   * Where a tapped notification was trying to go, when it could not go there
+   * yet.
+   *
+   * A reminder can be tapped from a lock screen while the app is signed out or
+   * still restoring its session. Navigating immediately would land on a screen
+   * that bounces to sign-in, and the destination would be lost — so it is kept
+   * here and consumed once the user is through (plans/phase9.md §26).
+   *
+   * Client-only navigation state, which is what this store is for. It is
+   * deliberately not persisted: a destination is only worth honouring in the
+   * moments after the tap.
+   */
+  pendingDestination: Href | null;
+  setPendingDestination: (destination: Href | null) => void;
+
   reset: () => void;
 }
 
@@ -25,5 +42,9 @@ export const useUIStore = create<UIState>((set) => ({
   hasCompletedOnboarding: false,
   setHasCompletedOnboarding: (hasCompletedOnboarding) => set({ hasCompletedOnboarding }),
 
-  reset: () => set({ selectedSeniorId: null, hasCompletedOnboarding: false }),
+  pendingDestination: null,
+  setPendingDestination: (pendingDestination) => set({ pendingDestination }),
+
+  reset: () =>
+    set({ selectedSeniorId: null, hasCompletedOnboarding: false, pendingDestination: null }),
 }));
