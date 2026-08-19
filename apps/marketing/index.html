@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MeraCare — one care plan for the whole family</title>
+    <meta
+      name="description"
+      content="MeraCare keeps medications, appointments, and everyday care in one shared plan, so families and caregivers always know what is done and what comes next."
+    />
+    <meta name="theme-color" content="#0F766E" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="canonical" href="https://meracare.app/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="MeraCare — one care plan for the whole family" />
+    <meta
+      property="og:description"
+      content="Medications, appointments, and everyday care in one shared plan. Free on iPhone and Android."
+    />
+    <meta property="og:url" content="https://meracare.app/" />
+    <meta property="og:image" content="https://meracare.app/assets/social-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <!-- Shared SVG pieces: the brand mark, the store glyphs, the pledge icons. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="mark" viewBox="0 0 40 40">
+          <rect width="40" height="40" rx="12" fill="#0F766E" />
+          <path
+            d="M11 24.5a9 9 0 1 1 18 0"
+            fill="none"
+            stroke="#5EEAD4"
+            stroke-width="3"
+            stroke-linecap="round"
+          />
+          <circle cx="20" cy="24.5" r="3.6" fill="#FFFFFF" />
+        </symbol>
+
+        <symbol id="glyph-apple" viewBox="0 0 24 24">
+          <path
+            fill="currentColor"
+            d="M16.7 12.7c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.8-3.5.8-.7 0-1.8-.8-3-.8-1.6 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7 1.4 0 1.8.7 3 .7 1.2 0 2-1.1 2.8-2.2.9-1.3 1.2-2.5 1.2-2.6 0 0-2.4-.9-2.4-3.8ZM14.4 5.9c.6-.8 1-1.9.9-3-.9 0-2 .6-2.7 1.4-.6.7-1.1 1.8-.9 2.9 1 .1 2-.5 2.7-1.3Z"
+          />
+        </symbol>
+
+        <symbol id="glyph-play" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M3.6 2.3 14.9 12 3.6 21.7A1.7 1.7 0 0 1 3 20.4V3.6c0-.5.2-1 .6-1.3Z" />
+          <path fill="currentColor" opacity=".82" d="M17.1 9.8 20.6 12l-3.5 2.2L14 12l3.1-2.2Z" />
+          <path fill="currentColor" opacity=".62" d="M4.7 1.6 16.1 9l-2.5 2.2L4.7 1.6Z" />
+          <path fill="currentColor" opacity=".62" d="M13.6 12.8 16.1 15 4.7 22.4l8.9-9.6Z" />
+        </symbol>
+
+        <symbol id="icon-lock" viewBox="0 0 24 24">
+          <rect
+            x="4"
+            y="10"
+            width="16"
+            height="11"
+            rx="3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          />
+          <path
+            d="M8 10V7.5a4 4 0 0 1 8 0V10"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+        </symbol>
+
+        <symbol id="icon-offline" viewBox="0 0 24 24">
+          <rect
+            x="6"
+            y="2.5"
+            width="12"
+            height="19"
+            rx="3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          />
+          <path
+            d="M9.3 12.2l1.9 1.9 3.6-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+
+        <symbol id="icon-type" viewBox="0 0 24 24">
+          <path
+            d="M4 17h16M4 12h11M4 7h7"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+        </symbol>
+
+        <symbol id="icon-heart" viewBox="0 0 24 24">
+          <path
+            d="M12 20s-7.2-4.3-7.2-9.2A4 4 0 0 1 12 8.3a4 4 0 0 1 7.2 2.5C19.2 15.7 12 20 12 20Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linejoin="round"
+          />
+        </symbol>
+      </defs>
+    </svg>
+
+    <header class="site-header">
+      <div class="shell">
+        <a class="wordmark" href="#top">
+          <svg aria-hidden="true"><use href="#mark" /></svg>
+          MeraCare
+        </a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="#what-it-does">What it does</a>
+          <a href="#who-its-for">Who it's for</a>
+          <a class="button" href="#get-the-app">Get the app</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="shell">
+          <div>
+            <p class="eyebrow rise">Care coordination for families</p>
+            <h1 class="rise">Everyone who cares, <em>on the same page</em>.</h1>
+            <p class="lede rise">
+              MeraCare holds one person's medications, appointments, and daily care in a single
+              shared plan — so everyone helping, including the person being cared for, sees what is
+              done and what comes next.
+            </p>
+            <div class="stores rise" role="group" aria-label="Download MeraCare">
+              <a class="store-badge" href="https://apps.apple.com/app/meracare/id0000000000">
+                <svg aria-hidden="true"><use href="#glyph-apple" /></svg>
+                <span>
+                  Download on the
+                  <strong>App Store</strong>
+                </span>
+              </a>
+              <a
+                class="store-badge"
+                href="https://play.google.com/store/apps/details?id=app.meracare.mobile"
+              >
+                <svg aria-hidden="true"><use href="#glyph-play" /></svg>
+                <span>
+                  Get it on
+                  <strong>Google Play</strong>
+                </span>
+              </a>
+            </div>
+            <p class="fineprint rise">Free to use. No ads. Works on iPhone and Android.</p>
+          </div>
+
+          <div class="hero-art">
+            <svg viewBox="0 0 520 500" role="img" aria-labelledby="hero-art-title">
+              <title id="hero-art-title">
+                A care circle: one person at the centre, with family and a caregiver around them,
+                and cards showing a medication taken and an upcoming appointment.
+              </title>
+              <defs>
+                <clipPath id="clip-centre"><circle cx="260" cy="250" r="76" /></clipPath>
+                <clipPath id="clip-a"><circle cx="260" cy="85" r="36" /></clipPath>
+                <clipPath id="clip-b"><circle cx="403" cy="332" r="36" /></clipPath>
+                <clipPath id="clip-c"><circle cx="117" cy="332" r="36" /></clipPath>
+                <filter id="soft" x="-25%" y="-25%" width="150%" height="150%">
+                  <feDropShadow
+                    dx="0"
+                    dy="10"
+                    stdDeviation="14"
+                    flood-color="#134E4A"
+                    flood-opacity="0.14"
+                  />
+                </filter>
+              </defs>
+
+              <circle cx="260" cy="250" r="212" fill="#CCFBF1" opacity="0.55" />
+              <circle cx="260" cy="250" r="212" fill="none" stroke="#5EEAD4" stroke-width="1.5" />
+
+              <g class="orbit">
+                <circle
+                  cx="260"
+                  cy="250"
+                  r="165"
+                  fill="none"
+                  stroke="#5EEAD4"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-dasharray="2 16"
+                />
+              </g>
+
+              <!-- Centre: the person being cared for. -->
+              <g filter="url(#soft)">
+                <circle cx="260" cy="250" r="76" fill="#FFFFFF" />
+              </g>
+              <g clip-path="url(#clip-centre)">
+                <circle cx="260" cy="250" r="76" fill="#F1FAF8" />
+                <circle cx="260" cy="228" r="27" fill="#0F766E" />
+                <path d="M260 262c30 0 46 22 50 46h-100c4-24 20-46 50-46Z" fill="#0F766E" />
+                <path d="M260 262c-16 0-27 6-35 16 10 6 22 9 35 9s25-3 35-9c-8-10-19-16-35-16Z" fill="#5EEAD4" />
+              </g>
+              <circle cx="260" cy="250" r="76" fill="none" stroke="#CCFBF1" stroke-width="3" />
+
+              <!-- The circle around them: family and a professional caregiver. -->
+              <g class="orbit">
+                <g class="orbit-node" style="transform-origin: 260px 85px">
+                  <circle cx="260" cy="85" r="36" fill="#FFFFFF" filter="url(#soft)" />
+                  <g clip-path="url(#clip-a)">
+                    <circle cx="260" cy="85" r="36" fill="#EEF7F5" />
+                    <circle cx="260" cy="76" r="13" fill="#115E59" />
+                    <path d="M260 92c15 0 23 11 25 24h-50c2-13 10-24 25-24Z" fill="#115E59" />
+                  </g>
+                </g>
+
+                <g class="orbit-node" style="transform-origin: 403px 332px">
+                  <circle cx="403" cy="332" r="36" fill="#FFFFFF" filter="url(#soft)" />
+                  <g clip-path="url(#clip-b)">
+                    <circle cx="403" cy="332" r="36" fill="#EEF7F5" />
+                    <circle cx="403" cy="323" r="13" fill="#14B8A6" />
+                    <path d="M403 339c15 0 23 11 25 24h-50c2-13 10-24 25-24Z" fill="#14B8A6" />
+                  </g>
+                </g>
+
+                <g class="orbit-node" style="transform-origin: 117px 332px">
+                  <circle cx="117" cy="332" r="36" fill="#FFFFFF" filter="url(#soft)" />
+                  <g clip-path="url(#clip-c)">
+                    <circle cx="117" cy="332" r="36" fill="#EEF7F5" />
+                    <circle cx="117" cy="323" r="13" fill="#64748B" />
+                    <path d="M117 339c15 0 23 11 25 24h-50c2-13 10-24 25-24Z" fill="#64748B" />
+                  </g>
+                </g>
+              </g>
+
+              <!-- What the circle actually shares. -->
+              <g class="float" font-family="Inter, sans-serif">
+                <g filter="url(#soft)">
+                  <rect x="312" y="30" width="186" height="66" rx="18" fill="#FFFFFF" />
+                </g>
+                <rect x="328" y="46" width="34" height="34" rx="11" fill="#DCFCE7" />
+                <path
+                  d="M338 63.5l4.5 4.5 9-9.5"
+                  fill="none"
+                  stroke="#15803D"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <text x="374" y="57" font-size="14" font-weight="600" fill="#172B2A">Morning meds</text>
+                <text x="374" y="76" font-size="13" fill="#64748B">Taken at 8:05</text>
+              </g>
+
+              <g class="float float--slow" font-family="Inter, sans-serif">
+                <g filter="url(#soft)">
+                  <rect x="22" y="404" width="200" height="66" rx="18" fill="#FFFFFF" />
+                </g>
+                <rect x="38" y="420" width="34" height="34" rx="11" fill="#CCFBF1" />
+                <rect
+                  x="46"
+                  y="427"
+                  width="18"
+                  height="17"
+                  rx="4"
+                  fill="none"
+                  stroke="#0F766E"
+                  stroke-width="2.4"
+                />
+                <path d="M46 433h18" stroke="#0F766E" stroke-width="2.4" />
+                <text x="84" y="431" font-size="14" font-weight="600" fill="#172B2A">
+                  Dr. Aziz, cardiology
+                </text>
+                <text x="84" y="450" font-size="13" fill="#64748B">Thursday at 10:00</text>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="what-it-does" aria-labelledby="what-it-does-title">
+        <div class="shell">
+          <div class="section-head">
+            <span class="label">What it does</span>
+            <h2 id="what-it-does-title">Three things, done properly.</h2>
+            <p>
+              Care falls apart in the gaps — a dose nobody logged, an appointment nobody was told
+              about. MeraCare closes those gaps and stays out of the way.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="card">
+              <svg class="spot" viewBox="0 0 96 96" aria-hidden="true">
+                <circle cx="48" cy="48" r="34" fill="#F1FAF8" />
+                <g transform="rotate(-38 48 48)">
+                  <rect x="45" y="38" width="27" height="20" rx="10" fill="#5EEAD4" />
+                  <rect x="24" y="38" width="27" height="20" rx="10" fill="#0F766E" />
+                  <path d="M48 38v20" stroke="#F1FAF8" stroke-width="2.5" />
+                </g>
+                <circle cx="74" cy="72" r="15" fill="#DCFCE7" stroke="#FFFFFF" stroke-width="3" />
+                <path
+                  d="M68.5 72.5l3.5 3.5 7-7.5"
+                  fill="none"
+                  stroke="#15803D"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <h3>Medications</h3>
+              <p>
+                Schedules, doses, and reminders in one list. Anyone in the circle can mark a dose
+                taken, and everyone sees it — including the missed ones.
+              </p>
+            </article>
+
+            <article class="card">
+              <svg class="spot" viewBox="0 0 96 96" aria-hidden="true">
+                <circle cx="48" cy="48" r="34" fill="#F1FAF8" />
+                <circle cx="34" cy="24" r="4" fill="#134E4A" />
+                <circle cx="62" cy="24" r="4" fill="#134E4A" />
+                <rect x="22" y="26" width="52" height="46" rx="11" fill="#0F766E" />
+                <rect x="22" y="38" width="52" height="34" rx="11" fill="#FFFFFF" />
+                <rect x="29" y="45" width="11" height="9" rx="3" fill="#CCFBF1" />
+                <rect x="43" y="45" width="11" height="9" rx="3" fill="#CCFBF1" />
+                <rect x="57" y="45" width="11" height="9" rx="3" fill="#5EEAD4" />
+                <rect x="29" y="58" width="11" height="9" rx="3" fill="#CCFBF1" />
+                <rect x="43" y="58" width="11" height="9" rx="3" fill="#CCFBF1" />
+                <circle cx="72" cy="70" r="15" fill="#FFFFFF" stroke="#0F766E" stroke-width="3" />
+                <path
+                  d="M72 62v8.5l5.5 3.5"
+                  fill="none"
+                  stroke="#0F766E"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <h3>Appointments</h3>
+              <p>
+                Every visit with the time, the place, and who is going along. Changes reach the
+                whole circle instead of one person's phone.
+              </p>
+            </article>
+
+            <article class="card">
+              <svg class="spot" viewBox="0 0 96 96" aria-hidden="true">
+                <circle cx="48" cy="48" r="34" fill="#F1FAF8" />
+                <circle
+                  cx="48"
+                  cy="48"
+                  r="34"
+                  fill="none"
+                  stroke="#5EEAD4"
+                  stroke-width="3"
+                  stroke-dasharray="2 10"
+                  stroke-linecap="round"
+                />
+                <circle cx="48" cy="48" r="15" fill="#0F766E" />
+                <circle cx="48" cy="14" r="11" fill="#FFFFFF" stroke="#115E59" stroke-width="3" />
+                <circle cx="78" cy="66" r="11" fill="#FFFFFF" stroke="#14B8A6" stroke-width="3" />
+                <circle cx="18" cy="66" r="11" fill="#FFFFFF" stroke="#64748B" stroke-width="3" />
+              </svg>
+              <h3>The care circle</h3>
+              <p>
+                Invite a sister, a son, a professional caregiver. Each person gets only the access
+                their role needs, and it can be changed or removed at any time.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <svg class="arc-divider" viewBox="0 0 1200 34" preserveAspectRatio="none" aria-hidden="true">
+        <path
+          d="M0 30C240 6 420 6 600 6s360 0 600 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-dasharray="2 16"
+        />
+      </svg>
+
+      <section class="section modes" id="who-its-for" aria-labelledby="who-its-for-title">
+        <div class="shell">
+          <div class="section-head">
+            <span class="label">Who it's for</span>
+            <h2 id="who-its-for-title">One app, however your family is arranged.</h2>
+            <p>
+              There is no separate app for professionals and no separate app for families. Roles
+              decide what each person sees.
+            </p>
+          </div>
+
+          <ul class="mode-list">
+            <li>
+              <h3>On your own</h3>
+              <p>Keep your own medications and appointments straight. Nobody else needs an account.</p>
+            </li>
+            <li>
+              <h3>With family</h3>
+              <p>Brothers, sisters, and grandchildren share one plan instead of a group chat.</p>
+            </li>
+            <li>
+              <h3>With a caregiver</h3>
+              <p>
+                A professional caregiver works from the same plan, for one person or for several.
+              </p>
+            </li>
+            <li>
+              <h3>Everyone together</h3>
+              <p>Family and professionals in the same circle, each with their own permissions.</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="pledges-title">
+        <div class="shell">
+          <div class="section-head">
+            <span class="label">How we build it</span>
+            <h2 id="pledges-title">Built for the person being cared for.</h2>
+          </div>
+
+          <div class="pledge-grid">
+            <div class="pledge">
+              <svg aria-hidden="true"><use href="#icon-type" /></svg>
+              <div>
+                <h3>Large type, plain words</h3>
+                <p>Big touch targets, high contrast, and no jargon anywhere in the app.</p>
+              </div>
+            </div>
+            <div class="pledge">
+              <svg aria-hidden="true"><use href="#icon-offline" /></svg>
+              <div>
+                <h3>Works without signal</h3>
+                <p>Log a dose in a waiting room or a lift. It syncs when the phone reconnects.</p>
+              </div>
+            </div>
+            <div class="pledge">
+              <svg aria-hidden="true"><use href="#icon-lock" /></svg>
+              <div>
+                <h3>Least access by default</h3>
+                <p>People see what their role needs, nothing more. Access can be revoked anytime.</p>
+              </div>
+            </div>
+            <div class="pledge">
+              <svg aria-hidden="true"><use href="#icon-heart" /></svg>
+              <div>
+                <h3>Coordination, not surveillance</h3>
+                <p>
+                  MeraCare records the care a family agrees to share. It does not track a person's
+                  movements.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="get-the-app" aria-labelledby="get-the-app-title">
+        <div class="shell">
+          <div class="closing">
+            <div>
+              <h2 id="get-the-app-title">Start with one person. Add the others when you're ready.</h2>
+              <p>
+                Set up a plan in a few minutes, then invite whoever helps. MeraCare is free, and
+                there are no ads.
+              </p>
+              <div class="stores stores--on-dark" role="group" aria-label="Download MeraCare">
+                <a class="store-badge" href="https://apps.apple.com/app/meracare/id0000000000">
+                  <svg aria-hidden="true"><use href="#glyph-apple" /></svg>
+                  <span>
+                    Download on the
+                    <strong>App Store</strong>
+                  </span>
+                </a>
+                <a
+                  class="store-badge"
+                  href="https://play.google.com/store/apps/details?id=app.meracare.mobile"
+                >
+                  <svg aria-hidden="true"><use href="#glyph-play" /></svg>
+                  <span>
+                    Get it on
+                    <strong>Google Play</strong>
+                  </span>
+                </a>
+              </div>
+            </div>
+
+            <div class="closing-art">
+              <svg viewBox="0 0 300 240" role="img" aria-labelledby="closing-art-title">
+                <title id="closing-art-title">
+                  A phone showing today's care plan, with one item already ticked off.
+                </title>
+                <rect x="86" y="14" width="128" height="212" rx="26" fill="#0B302E" />
+                <rect x="93" y="21" width="114" height="198" rx="20" fill="#F8FAFA" />
+                <rect x="128" y="28" width="44" height="7" rx="3.5" fill="#0B302E" />
+                <text x="105" y="58" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#172B2A">
+                  Today
+                </text>
+                <rect x="105" y="68" width="90" height="34" rx="10" fill="#FFFFFF" stroke="#DCFCE7" stroke-width="2" />
+                <circle cx="120" cy="85" r="8" fill="#DCFCE7" />
+                <path d="M116.5 85l2.5 2.5 4.5-5" fill="none" stroke="#15803D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <rect x="134" y="79" width="48" height="5" rx="2.5" fill="#CBD5D5" />
+                <rect x="134" y="88" width="30" height="5" rx="2.5" fill="#E2E8E8" />
+                <rect x="105" y="110" width="90" height="34" rx="10" fill="#FFFFFF" stroke="#E2E8E8" stroke-width="2" />
+                <circle cx="120" cy="127" r="8" fill="#CCFBF1" />
+                <rect x="134" y="121" width="42" height="5" rx="2.5" fill="#CBD5D5" />
+                <rect x="134" y="130" width="26" height="5" rx="2.5" fill="#E2E8E8" />
+                <rect x="105" y="152" width="90" height="34" rx="10" fill="#FFFFFF" stroke="#E2E8E8" stroke-width="2" />
+                <circle cx="120" cy="169" r="8" fill="#FEF3C7" />
+                <rect x="134" y="163" width="36" height="5" rx="2.5" fill="#CBD5D5" />
+                <rect x="134" y="172" width="46" height="5" rx="2.5" fill="#E2E8E8" />
+                <rect x="105" y="196" width="90" height="14" rx="7" fill="#0F766E" />
+                <circle cx="42" cy="70" r="22" fill="#115E59" />
+                <circle cx="42" cy="63" r="8" fill="#5EEAD4" />
+                <path d="M42 73c9 0 14 7 15 15H27c1-8 6-15 15-15Z" fill="#5EEAD4" />
+                <circle cx="258" cy="164" r="22" fill="#115E59" />
+                <circle cx="258" cy="157" r="8" fill="#5EEAD4" />
+                <path d="M258 167c9 0 14 7 15 15h-30c1-8 6-15 15-15Z" fill="#5EEAD4" />
+                <path
+                  d="M64 84C74 112 84 128 92 140"
+                  fill="none"
+                  stroke="#5EEAD4"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-dasharray="2 12"
+                  opacity="0.8"
+                />
+                <path
+                  d="M236 152c-10-18-20-30-28-38"
+                  fill="none"
+                  stroke="#5EEAD4"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-dasharray="2 12"
+                  opacity="0.8"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell">
+        <div class="footer-top">
+          <div>
+            <a class="wordmark" href="#top">
+              <svg aria-hidden="true"><use href="#mark" /></svg>
+              MeraCare
+            </a>
+            <p class="footer-note" style="margin-top: 0.75rem">
+              <em>Mera</em> means “mine”. The plan belongs to the person it is about, and so does
+              the circle around them.
+            </p>
+          </div>
+          <div class="footer-links">
+            <a href="mailto:hello@meracare.app">hello@meracare.app</a>
+            <a href="https://apps.apple.com/app/meracare/id0000000000">App Store</a>
+            <a href="https://play.google.com/store/apps/details?id=app.meracare.mobile">Google Play</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span>© 2026 MeraCare</span>
+          <span>Made for families looking after someone they love.</span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
