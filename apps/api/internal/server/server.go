@@ -19,6 +19,7 @@ import (
 	"github.com/meracare/api/internal/invitations"
 	"github.com/meracare/api/internal/medications"
 	"github.com/meracare/api/internal/members"
+	"github.com/meracare/api/internal/notifications"
 	"github.com/meracare/api/internal/relationships"
 	"github.com/meracare/api/internal/seniors"
 	"github.com/meracare/api/internal/tasks"
@@ -65,22 +66,26 @@ func New(deps Dependencies) http.Handler {
 	)
 	invitationHandler := invitations.NewHandler(invitationService, guard, requireAuth)
 
-	taskHandler := tasks.NewHandler(
-		tasks.NewService(tasks.NewRepository(deps.Pool), seniorRepo, relationshipRepo, recorder),
-		guard,
-	)
+	taskService := tasks.NewService(tasks.NewRepository(deps.Pool), seniorRepo, relationshipRepo, recorder)
+	taskHandler := tasks.NewHandler(taskService, guard)
 
-	medicationHandler := medications.NewHandler(
-		medications.NewService(medications.NewRepository(deps.Pool), seniorRepo, recorder),
-		guard,
-	)
+	medicationService := medications.NewService(medications.NewRepository(deps.Pool), seniorRepo, recorder)
+	medicationHandler := medications.NewHandler(medicationService, guard)
 
-	appointmentHandler := appointments.NewHandler(
-		appointments.NewService(
-			appointments.NewRepository(deps.Pool), seniorRepo, relationshipRepo, recorder,
-		),
-		guard,
+	appointmentService := appointments.NewService(
+		appointments.NewRepository(deps.Pool), seniorRepo, relationshipRepo, recorder,
 	)
+	appointmentHandler := appointments.NewHandler(appointmentService, guard)
+
+	// Reminders read the three domains above through narrow adapters, so the
+	// notification code never learns what a dose is (plans/phase8.md §1).
+	notificationHandler := notifications.NewHandler(notifications.NewService(
+		notifications.NewRepository(deps.Pool),
+		circleSource{repo: seniorRepo},
+		taskSource{service: taskService},
+		medicationSource{service: medicationService},
+		appointmentSource{service: appointmentService},
+	))
 
 	router := chi.NewRouter()
 	router.NotFound(httpx.NotFoundHandler())
@@ -106,6 +111,7 @@ func New(deps Dependencies) http.Handler {
 	router.Route("/v1", func(v1 chi.Router) {
 		v1.Use(requireAuth)
 		v1.Mount("/me", userHandler.Routes())
+		v1.Mount("/notifications", notificationHandler.Routes())
 		v1.Mount("/tasks", taskHandler.TaskRoutes())
 		v1.Mount("/medications", medicationHandler.MedicationRoutes())
 		v1.Mount("/appointments", appointmentHandler.AppointmentRoutes())

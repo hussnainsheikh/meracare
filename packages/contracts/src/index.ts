@@ -8,6 +8,8 @@ export * from './datetime';
 export * from './errors';
 export * from './medication';
 export * from './medication-labels';
+export * from './notification';
+export * from './notification-labels';
 export * from './pagination';
 export * from './permission-labels';
 export * from './recurrence';

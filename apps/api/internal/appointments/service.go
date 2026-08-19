@@ -134,6 +134,20 @@ func (s *Service) List(
 	}
 }
 
+// Window returns the senior's appointments starting in [from, to).
+//
+// An explicit range rather than one of the named scopes, for the reminder plan:
+// it asks about a week from an arbitrary instant, which is neither "today" nor
+// "upcoming". Every status is returned; deciding which of them still deserve a
+// reminder belongs to the caller, not here (plans/phase8.md §14).
+func (s *Service) Window(
+	ctx context.Context,
+	seniorID uuid.UUID,
+	from, to time.Time,
+) ([]Appointment, error) {
+	return s.appointments.ListWindow(ctx, seniorID, from, to, maxUpcoming)
+}
+
 // History returns one page of a senior's past appointments, newest first.
 //
 // "Past" means the appointment's time has come, whatever became of it: a

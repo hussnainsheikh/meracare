@@ -4,7 +4,7 @@ Last updated: 2026-08-19
 
 ## Current Phase
 
-**Phase 7 — Care Events & Activity Timeline: complete.** Next up is Phase 8.
+**Phase 8 — Notifications & Reminders: complete.** Next up is Phase 9.
 
 ## Verification Is Local
 
@@ -51,10 +51,11 @@ apps/
       config/              environment configuration
       database/            pgx pool, embedded migrations + runner, error helpers,
                            Querier and InTx for transactional writes
-        migrations/        0001_init … 0007_care_events
+        migrations/        0001_init … 0008_notifications
       invitations/         tokens, lifecycle, accept; /v1/invitations
       medications/         medicines, schedules, doses; /v1/medications
       members/             care-circle membership; /v1/seniors/{id}/members
+      notifications/       preferences, device registration, reminder plan
       paging/              shared keyset cursor for every paged history
       recurrence/          shared RRULE subset and timezone-aware expansion
       tasks/               care tasks, completion; /v1/tasks
@@ -71,7 +72,8 @@ apps/
     src/
       app/                 index, sign-in, home, onboarding, seniors/[id]/*
                            (incl. activity), appointments/[id]/*,
-                           medications/[id]/*, tasks/[id], invitations/[token]
+                           medications/[id]/*, tasks/[id], invitations/[token],
+                           settings/notifications
       components/ui/       ActivityRow, AppointmentCard, Button, Card,
                            MedicationCard, OptionCard, PermissionToggle, Screen,
                            TaskCard, Text, TextField
@@ -80,6 +82,8 @@ apps/
       features/auth/       session restore, sign in/up/out
       features/circle/     members, invitations, accept
       features/medications/ medication queries, mutations, offline replay
+      features/notifications/ preferences, device registration, OS permission,
+                           reminder reconciliation, deep links
       features/sync/       one offline queue drain across every entity
       features/tasks/      task queries, mutations, offline replay
       lib/offline/         expo-sqlite cache, sync queue, failure classification
@@ -364,6 +368,57 @@ docker-compose.yml         local PostgreSQL for development and tests
 - Mobile: `tsc --noEmit` clean, `expo lint` clean, 169 Jest tests across 18
   suites, Prettier clean.
 
+## Completed — Phase 8
+
+| Area | Where |
+|------|-------|
+| Notification domain | `internal/notifications/notification.go` — reminder types, platforms, preferences, lead times |
+| Reminder plan | `internal/notifications/reminder.go` — projection of care through authorization and preferences |
+| Preferences API | `GET` / `PATCH /v1/notifications/preferences` |
+| Device registration | `POST /v1/notifications/devices`, `DELETE /v1/notifications/devices/{deviceId}` |
+| Reminder plan API | `GET /v1/notifications/reminders` |
+| Schedule adapters | `internal/server/adapters.go` — tasks, medication, appointments, care circle |
+| Database | migration `0008_notifications` — preferences and devices; deliberately no reminder table |
+| Wording | `packages/contracts/src/notification-labels.ts` — one place for every notification sentence |
+| Mobile scheduling | `src/features/notifications/` — reconciliation against the OS scheduler |
+| Mobile settings | `src/app/settings/notifications.tsx` — screen 25 of docs/13 |
+
+### Verified end to end
+
+- `go test -race -count=1 ./...` green across 21 packages.
+- All eight migrations applied to a brand-new database, the whole suite re-run
+  against it, and the database dropped afterwards.
+- Every Phase 2–7 test still passes unchanged.
+- The three documented lead times are asserted literally against the brief's own
+  worked examples: a dose at 08:00 reminds at 07:45, a task due 09:00 at 08:45,
+  an appointment at 14:00 at 13:00.
+- Idempotency is tested as identity rather than as behaviour: planning twice
+  produces byte-identical reminder ids, two users get different ids for the same
+  dose, and moving a dose changes its id — which is what makes the device cancel
+  the stale reminder rather than keep it.
+- Cancellation is tested through the domain, not through a notification API:
+  cancelling an appointment, taking a dose, and revoking a caregiver each empty
+  the relevant reminders from the plan without anything cancelling them
+  explicitly.
+- Authorization: a stranger's plan is empty; a caregiver holding
+  `appointments.view` but not `medications.view` gets appointment reminders and
+  no dose reminders; a revoked caregiver's plan empties while the owner's is
+  untouched; an assigned appointment reminds only its assignee.
+- Devices: re-registering keeps one row and refreshes the token; a registration
+  carrying no token does not erase a known one; deactivation keeps the row and
+  drops the token; signing back in reactivates the same row; two users may share
+  one device identifier; another user's device id answers 404, not 403.
+- A test asserts the push token never appears in any response body, and another
+  asserts no reminder response contains a medicine name, a dosage, or any title
+  or body field at all.
+- The plan is capped at 50 reminders and the survivors are the soonest, which is
+  asserted against a circle with four daily tasks and 38 doses.
+- Mobile: `tsc --noEmit` clean, `expo lint` clean, 221 Jest tests across 26
+  suites, Prettier clean. Reconciliation is tested as a pure function: running
+  it twice schedules nothing the second time, an empty plan cancels everything,
+  and a notification scheduled beyond the plan's horizon is left alone.
+
+
 ## Architectural Decisions Taken in Phase 1
 
 These are implementation choices within the locked architecture — nothing in
@@ -485,15 +540,17 @@ docs/12 or docs/17 was changed.
 ## Blockers
 
 1. **The real sign-in round trip is still unexercised — blocked on email
-   confirmation.** Phase 7 attempted it (plans/phase7.md §32). What was
-   established, and what was not:
+   confirmation.** Attempted again in Phase 8 (plans/phase8.md §44) with the
+   same result. What was established, and what was not:
 
    - The JWKS endpoint is reachable and publishes an ES256 key.
    - The API, booted in asymmetric mode against the real project, logs
      `loaded Supabase signing keys` at startup, answers `/readyz` 200, and
      rejects both a missing and a forged bearer token with 401
      `UNAUTHENTICATED`. So the API genuinely verifies against the live
-     project's published keys.
+     project's published keys. Phase 8 re-ran this against the new
+     `/v1/notifications/*` routes: all three answer 401 unauthenticated and 401
+     to a forged token.
    - **What could not be done:** obtain a genuine token. The project requires
      email confirmation. A sign-up through `/auth/v1/signup` with the anon key
      returns 200 but no session, and the password grant then fails with
@@ -508,23 +565,51 @@ docs/12 or docs/17 was changed.
    Providers → Email) and re-run the check; or confirm a real address and sign
    in with it once. Either takes a few minutes and needs no code change.
 
-   Note: an unconfirmed account `phase7.verification@gmail.com` was created in
-   the Supabase project during this attempt. It has no session and no
-   application user, but it can be deleted from the Auth dashboard.
-2. **`DATABASE_URL` points at the Supabase direct connection, which is
-   unreachable from this machine.** `db.<ref>.supabase.co:5432` resolves to an
-   IPv6 address only and every attempt fails with "no route to host", so
-   `pnpm api:migrate` and the API cannot use it here. Nothing about the
-   architecture is wrong — the direct connection is simply IPv6-only, and this
-   network has no IPv6 route. The **session pooler** hostname works over IPv4
-   and is the intended setting; it needs the database password, which must go
-   straight into `apps/api/.env` and never into a commit or a chat.
+   Note: two unconfirmed accounts were created in the Supabase project during
+   these attempts — `phase7.verification@gmail.com` and
+   `phase8.verification@gmail.com`. Neither has a session or an application
+   user; both can be deleted from the Auth dashboard.
+2. **The hosted database cannot be reached: the pooler password is wrong.**
+   `DATABASE_URL` now names the **session pooler**
+   (`aws-0-ap-northeast-1.pooler.supabase.com:5432`), which is the correct
+   setting — it works over IPv4, unlike the direct `db.<ref>.supabase.co` host,
+   which resolves to IPv6 only and has no route from this network. But the
+   credential is not valid: booting the API against it fails with
+   `failed SASL auth: password authentication failed for user "postgres"`
+   (SQLSTATE 28P01).
 
-   Phase 7 did not change this (plans/phase7.md §33). All local verification
-   used the container from `docker-compose.yml`, and migrations `0001`–`0007`
+   Phase 8 did not change this (plans/phase8.md §45). All local verification
+   used the container from `docker-compose.yml`, and migrations `0001`–`0008`
    have therefore **not** been applied to the hosted project yet.
 
-3. **Brand assets are still the Expo template placeholders.** `assets/images`
+   **To close it**, put the project's database password into `apps/api/.env`
+   — never into a commit or a chat — and run `pnpm api:migrate`.
+
+3. **Push delivery and real-device notification behaviour are unverified.**
+   No physical iOS or Android device and no push credentials were available, so
+   plans/phase8.md §43 could not be satisfied and no claim is made that a
+   notification has ever appeared on a phone. What *was* verified is everything
+   below the OS boundary: the plan the server produces, the reconciliation
+   arithmetic, and the exact scheduling calls made to `expo-notifications`
+   (identifier, trigger instant, content, payload), asserted against a mocked
+   module. The first run on a device should check three things in particular:
+   that a scheduled reminder actually fires, that reopening the app does not
+   duplicate it, and that tapping it opens the right screen.
+
+   Push notifications are not implemented at all — there is no sender, and no
+   Expo/APNs/FCM code anywhere in the repository. Device registrations are
+   stored so that the phase which adds one has the tokens it needs.
+
+4. **A revoked caregiver's already-scheduled reminders survive until their app
+   next reconciles.** Server-side eligibility is authoritative and immediate:
+   the moment a relationship is revoked, that user's plan is empty. But
+   reminders are scheduled on the device, and the device only learns this when
+   it next fetches the plan — on foreground, or on a query refetch. The window
+   is bounded by the 7-day horizon and in practice by how soon the app is next
+   opened. Closing it entirely would need a push to the revoked device telling
+   it to clear, which is the push phase's work.
+
+5. **Brand assets are still the Expo template placeholders.** `assets/images`
    holds the generated icon/splash. Real MeraCare icon, splash, and the first
    unDraw/Storyset illustrations are needed, along with `ASSET_LICENSES.md`
    (docs/18).
@@ -873,6 +958,97 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
     every entry is coloured is one where nothing stands out, and most care
     activity is ordinary — somebody did what they said they would.
 
+## Architectural Decisions Taken in Phase 8
+
+**Reminders are scheduled on the device, from a plan the server computes.**
+docs/08 assigns exactly medication, task, and appointment reminders to local
+notifications — "Server schedule → Mobile sync → OS local notification" — and
+remote push to missed work, activity, invitations, and messages, none of which
+Phase 8 covers. Local scheduling also means reminders arrive without a
+connection and without MeraCare holding push credentials it does not have.
+
+**There is no notifications table for reminders, and that is the design.** A
+reminder is a consequence of care, not a record of it: the dose, the schedule,
+the senior's timezone, and the user's preferences already determine it
+completely. Storing it as well would create a second copy that can disagree with
+the first — the medicine is stopped, but the reminder row still says 07:45.
+Computing the plan on every request makes §22 (no stale reminders) and §31
+(domain state wins) structurally true rather than rules the code must remember.
+The cost is a plan query per refresh, which is three indexed window reads.
+
+**The `SCHEDULED / SENT / CANCELLED / FAILED` vocabulary of §24 is not
+implemented, deliberately.** Those states describe a server-side delivery
+pipeline. Phase 8's server never delivers anything — the device does — so rows
+in those states would be fiction. They belong to the push phase.
+
+**Preferences cover three categories, not docs/08's seven.** docs/08 also lists
+activity, messages, invitations, and escalation alerts. None has a delivery path
+yet, and a switch that controls nothing is worse than a missing switch: the user
+turns it off and still gets nothing, or on and still gets nothing, and either
+way the app has lied. They arrive as columns on the same table in the phase that
+sends them. This is the same judgement Phase 7 made about the stale
+`CARE_EVENT_TYPES` placeholder.
+
+**Lead times are fixed at 15 minutes, 15 minutes, and 1 hour.** Nothing in the
+documentation defines offsets, and §12 forbids inventing options beyond the
+documented MVP, so the three worked examples in the brief itself (§§12, 13, 14)
+are treated as the specification. They are not configurable.
+
+**Reminder identity is a UUIDv5 over recipient, type, subject, and firing
+instant.** This is the entire idempotency mechanism, and no new one was
+introduced. Because the identifier is a pure function of what the reminder
+means, the device can use it directly as the OS notification identifier: asking
+the OS to schedule an id it already holds replaces rather than duplicates.
+Including the instant is what makes a rescheduled dose a *different* reminder,
+so the stale one is cancelled instead of surviving.
+
+**Assigned work reminds only its assignee; unassigned work reminds everyone who
+can see it.** A circle of six should not all be told to drive Amma to the
+clinic when one daughter is going. Medication has no assignee, so every member
+with `medications.view` is reminded — which is what a family sharing care needs.
+
+**No new permission vocabulary.** Reminder eligibility uses the existing
+`tasks.view`, `medications.view`, and `appointments.view`. Being reminded about
+a dose is a weaker act than reading the medication list, so a
+`notifications.*` permission would have been an invention docs/02 does not
+sanction.
+
+**The plan is capped at 50 reminders.** iOS keeps at most 64 pending local
+notifications per app and silently discards the rest, so a larger plan would be
+partly imaginary. Fifty leaves headroom and is enforced server-side, soonest
+first, with a stable tiebreak so the truncation does not shuffle between
+refreshes.
+
+**`internal/notifications` cannot reach a dosage.** It consumes a `Due`
+— an id, an instant, an optional assignee — through per-domain interfaces
+implemented by adapters at the composition root. Everything the notification
+code could do with a medicine's name is something §§16, 17, and 47 forbid, so
+the type system is where that is enforced rather than review.
+
+**Notification wording lives in contracts, and the server sends none.** The
+reminder response has no title and no body field at all; the device composes
+both from `notification-labels.ts`. A lock screen has no idea who is looking at
+it, so "Medication reminder" plus the senior's name and local time is the whole
+vocabulary — no drug, no dosage, no condition.
+
+**Routes are the app's business, not the server's.** The reminder says what it
+is about; `src/features/notifications/routes.ts` turns that into a destination.
+A server that named screens would need redeploying to move one.
+
+**Preference changes are not queued for offline replay.** The offline queue
+exists for care that was given, where losing the record loses something that
+happened. A preference is a statement about the future; applied optimistically
+offline it would show reminders as off while the server went on planning them.
+§36's second branch — require connectivity — is what is implemented.
+
+**The revocation window is bounded, not eliminated.** Server-side eligibility is
+authoritative: a revoked caregiver's plan is empty immediately. But reminders
+already scheduled on their device survive until that device next reconciles.
+The 7-day horizon bounds it, reconciliation runs on every foreground, and
+sign-out clears everything. This is a real residual window and is recorded in
+Blockers rather than papered over.
+
+
 ## Deferred, and why
 
 - **Care events.** Inviting and joining are `MEMBER_INVITED` and `MEMBER_JOINED`
@@ -961,15 +1137,41 @@ Later phases, unchanged from docs/14 and the Phase 1 plan:
   built per render. That avoids a join on the hot path; if a later screen needs
   activity without the member list, the join is the obvious next step.
 
-## Next Tasks (Phase 8 — notifications and background work)
+- **Push notifications** (Phase 8). No sender, no provider code, no delivery.
+  docs/08 assigns push to missed work, caregiver activity, invitations, and
+  messages — none of which Phase 8 covers — and the credentials to verify any of
+  it were unavailable. Device registrations are stored so the phase that adds a
+  sender starts with the tokens.
+- **Escalation** (Phase 8). docs/08 describes reminder → grace period → overdue
+  → notify assignee → optionally notify family. The first step exists; the rest
+  is push, and the "overdue" and "missed" signals are still derived at read time
+  rather than emitted, exactly as Phases 4, 5, and 7 left them.
+- **The four other preference categories** (Phase 8). Activity, messages,
+  invitations, and escalation alerts, from docs/08. Each arrives with the
+  delivery path that makes it mean something, as a column on the existing table.
+- **Configurable reminder offsets** (Phase 8). Lead times are fixed. §12 forbids
+  inventing options beyond the documented MVP, and the documentation defines
+  none, so "remind me 30 minutes before instead" is a product decision rather
+  than an omission.
+- **A notification inbox** (Phase 8). docs/03 defines a `Notification` entity
+  with `read_at`, which is an in-app list of things that were sent. Nothing is
+  sent from the server yet, so the table would have no rows and the screen no
+  content. It belongs with push.
+- **Server-side background jobs** (Phase 8). None were added. With reminders
+  scheduled on the device from a plan computed on request, there is nothing for
+  a worker to do, and §30 asks for the minimum. The first genuine need for one
+  is push delivery retries.
 
-Not started. Per the Phase 7 brief, work stops here pending Phase 8
+## Next Tasks (Phase 9)
+
+Not started. Per the Phase 8 brief, work stops here pending Phase 9
 instructions.
 
-Phase 8 has an unusually clear starting point: `TASK_MISSED` and
-`MEDICATION_MISSED` are already in the vocabulary and deliberately unemitted,
-and every fact a reminder needs — the senior's timezone, the scheduled instant,
-the assignee — is already stored.
+Whatever Phase 9 turns out to be, two things are now queued up for the phase
+that adds push: `TASK_MISSED` and `MEDICATION_MISSED` are in the care-event
+vocabulary and deliberately unemitted, and `notification_devices` holds the
+tokens a sender would need. Adding a sender would also close the residual
+revocation window recorded in Blockers.
 
 ## Running It
 

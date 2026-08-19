@@ -80,6 +80,12 @@ export default function HomeScreen() {
         </View>
       )}
 
+      <Button
+        variant="ghost"
+        label="Notification settings"
+        onPress={() => router.push('/settings/notifications')}
+      />
+
       <Button variant="ghost" label="Sign out" onPress={signOut} loading={isSubmitting} />
     </Screen>
   );
