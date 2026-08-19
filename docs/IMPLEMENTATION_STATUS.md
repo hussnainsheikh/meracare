@@ -4,7 +4,9 @@ Last updated: 2026-08-19
 
 ## Current Phase
 
-**Phase 8 — Notifications & Reminders: complete.** Next up is Phase 9.
+**Phase 9 — Final MVP Integration & Production Readiness: complete.**
+
+**The MeraCare MVP is complete.** Nothing beyond it has been started.
 
 ## Verification Is Local
 
@@ -419,6 +421,71 @@ docker-compose.yml         local PostgreSQL for development and tests
   and a notification scheduled beyond the plan's horizon is left alone.
 
 
+## Completed — Phase 9
+
+The final MVP phase: no new domains, one integration and polish pass over
+Phases 1–8.
+
+| Area | Where |
+|------|-------|
+| End-to-end journey test | `internal/server/journey_integration_test.go` — a mixed circle, in order, over real HTTP |
+| Circle administration fix | `internal/seniors/service.go` — the creator holds `members.manage` |
+| Senior dashboard | `app/seniors/[seniorId]/index.tsx` — today's care, summarised and linked |
+| First-time guidance | the same screen — "Getting started", showing only permitted steps |
+| Access lost while open | `lib/query-client.ts` — a senior's cache is dropped when the API stops recognising the caller |
+| Deep links before sign-in | `stores/ui-store.ts` + `features/notifications/use-reminder-sync.ts` |
+| Environment documentation | `apps/mobile/.env.example` — notification configuration |
+
+### The bug this phase existed to find
+
+A family circle had **nobody who could ever revoke a member**.
+
+The daughter who sets up her mother's care is a `family_member`, and
+`members.manage` is deliberately not a family-member default — a relative
+invited to help should not be able to remove the person who invited them. The
+mother has no account to hold the permission either, and an invitation can only
+delegate what the inviter already has, so the permission could not enter the
+circle by any route. A professional caregiver's access to somebody's medical
+information could be granted and never withdrawn.
+
+Nothing in Phases 1–8 could have caught it: every phase tested its own domain,
+and the gap only appears when circle creation, invitation, and revocation are
+walked in sequence. That sequence is now a test.
+
+The fix follows docs/01's Ownership section, which asks that creator, senior,
+member, and permission stay four different things so coordination can later be
+transferred: the **creator** of a circle holds `members.manage`, stored on their
+relationship like every other permission. Role defaults are unchanged, so an
+invited family member still does not administer the circle — and handing
+coordination to somebody else is now just granting them the permission.
+
+### Verified end to end
+
+- `go test -race -count=1 ./...` green across 21 packages.
+- All eight migrations applied to a brand-new database — 46 indexes, 38 check
+  constraints — the whole suite re-run against it, then the database dropped.
+- The MVP journey runs as one test, in order, entirely over HTTP: daughter
+  creates the circle → adds a recurring task, a medication with a schedule, and
+  an appointment → a stranger gets 404 on every route and an empty reminder plan
+  → son invited and joins → caregiver invited with a deliberately narrow
+  permission set → caregiver completes a task, records a dose, reads the
+  appointment → is refused profile edits, prescription changes, cancellation,
+  invitations, and the member list → her work appears in the family's timeline →
+  she has reminders → she is revoked → every route answers 404, her senior list
+  empties, her reminders stop → **her recorded care survives**, and the dose she
+  gave is still marked as taken.
+- Solo self-care is a second journey, asserting it needs nobody else: create own
+  profile, add task, medication and appointment, take a dose, read own activity,
+  receive own reminders.
+- The unauthenticated invitation preview is asserted not to leak the senior's
+  phone number, medication, or appointments.
+- Mobile: `tsc --noEmit` clean, `expo lint` clean, **246 tests across 30
+  suites**, Prettier clean.
+- Dashboard tests pin the three failure modes that matter: a section the reader
+  may not see is absent entirely, a failed section shows a retry rather than
+  blank space, and a raw server error (`SQLSTATE …`) never reaches the screen.
+
+
 ## Architectural Decisions Taken in Phase 1
 
 These are implementation choices within the locked architecture — nothing in
@@ -540,8 +607,11 @@ docs/12 or docs/17 was changed.
 ## Blockers
 
 1. **The real sign-in round trip is still unexercised — blocked on email
-   confirmation.** Attempted again in Phase 8 (plans/phase8.md §44) with the
-   same result. What was established, and what was not:
+   confirmation.** Attempted again in Phase 9 (plans/phase9.md §28), with the
+   same result: the account created during the Phase 8 attempt still answers
+   `email_not_confirmed` to a password grant, so the project's configuration is
+   unchanged. No further account was created. What is established, and what is
+   not:
 
    - The JWKS endpoint is reachable and publishes an ES256 key.
    - The API, booted in asymmetric mode against the real project, logs
@@ -569,21 +639,23 @@ docs/12 or docs/17 was changed.
    these attempts — `phase7.verification@gmail.com` and
    `phase8.verification@gmail.com`. Neither has a session or an application
    user; both can be deleted from the Auth dashboard.
-2. **The hosted database cannot be reached: the pooler password is wrong.**
-   `DATABASE_URL` now names the **session pooler**
-   (`aws-0-ap-northeast-1.pooler.supabase.com:5432`), which is the correct
-   setting — it works over IPv4, unlike the direct `db.<ref>.supabase.co` host,
-   which resolves to IPv6 only and has no route from this network. But the
-   credential is not valid: booting the API against it fails with
-   `failed SASL auth: password authentication failed for user "postgres"`
-   (SQLSTATE 28P01).
+2. **Migrations have not been applied to the hosted Supabase project.**
+   `apps/api/.env` currently points `DATABASE_URL` at the local container, which
+   is the right setting for development and is what every check in Phases 1–9
+   ran against. The hosted setting is documented in `apps/api/.env.example`: the
+   **session pooler**
+   (`postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`),
+   which works over IPv4 — unlike the direct `db.<ref>.supabase.co` host, which
+   resolves to IPv6 only and has no route from this network.
 
-   Phase 8 did not change this (plans/phase8.md §45). All local verification
-   used the container from `docker-compose.yml`, and migrations `0001`–`0008`
-   have therefore **not** been applied to the hosted project yet.
+   When the pooler string was configured during Phase 8 it failed authentication
+   (`failed SASL auth ... for user "postgres"`, SQLSTATE 28P01), so the password
+   in use was not the right one. Migrations `0001`–`0008` are therefore **not**
+   on the hosted project.
 
    **To close it**, put the project's database password into `apps/api/.env`
-   — never into a commit or a chat — and run `pnpm api:migrate`.
+   using the pooler form above — never into a commit or a chat — and run
+   `pnpm api:migrate`.
 
 3. **Push delivery and real-device notification behaviour are unverified.**
    No physical iOS or Android device and no push credentials were available, so
@@ -1049,6 +1121,46 @@ sign-out clears everything. This is a real residual window and is recorded in
 Blockers rather than papered over.
 
 
+## Architectural Decisions Taken in Phase 9
+
+**The creator of a care circle holds `members.manage`.** See "The bug this phase
+existed to find" above. Granted to the creator rather than to the role, and
+stored on the relationship, so role defaults are untouched and coordination
+remains transferable — which is what docs/01's Ownership section asks for.
+
+**The senior dashboard summarises; Home lists people.** docs/13 has both
+screens, and §9's ordering — senior, then today's care, then activity, then the
+circle — is the senior dashboard's. Home stays a list of people plus the
+caller's own assigned work, because a professional caregiver with six clients
+opening the app to six days of care would have to scroll past all of it to find
+their round.
+
+**Losing access is handled by the cache, not by each screen.** A revoked
+caregiver keeps whatever was already fetched until something asks again. A
+single handler on the query cache watches for the API answering 404 or 401 on a
+senior-scoped key and drops that senior's data. It removes only *inactive*
+queries: removing an active one makes its observer refetch, fail, and arrive
+back at the same handler — a loop that would hammer the API for as long as the
+screen stayed open. The screen the user is looking at keeps its own query so it
+can render its own "not available" message.
+
+**A notification tapped before sign-in is held, not lost.** The destination goes
+into the small UI store and is consumed once the session is through. It is
+deliberately not persisted: a destination is only worth honouring in the moments
+after the tap.
+
+**Empty states distinguish "nothing today" from "nothing set up".** A circle
+with no care at all gets "Getting started" with the first steps the *reader* is
+permitted to take — a caregiver who can record care but not create it is never
+invited to add a medicine the API would refuse.
+
+**Error states never carry the underlying message.** `ApiError.message` is
+always either the server's user-facing text or a generic fallback, and the raw
+cause is kept in `cause` where nothing renders it. The Go side masks every
+unexpected failure through `httpx.ErrInternal`. A test asserts a `SQLSTATE`
+string cannot reach the dashboard.
+
+
 ## Deferred, and why
 
 - **Care events.** Inviting and joining are `MEMBER_INVITED` and `MEMBER_JOINED`
@@ -1162,16 +1274,26 @@ Blockers rather than papered over.
   a worker to do, and §30 asks for the minimum. The first genuine need for one
   is push delivery retries.
 
-## Next Tasks (Phase 9)
+## After the MVP
 
-Not started. Per the Phase 8 brief, work stops here pending Phase 9
-instructions.
+The MVP is complete and work stops here. Nothing below has been started, and
+nothing below should be started without an explicit decision.
 
-Whatever Phase 9 turns out to be, two things are now queued up for the phase
-that adds push: `TASK_MISSED` and `MEDICATION_MISSED` are in the care-event
-vocabulary and deliberately unemitted, and `notification_devices` holds the
-tokens a sender would need. Adding a sender would also close the residual
-revocation window recorded in Blockers.
+Two environment items are the only things standing between this and a running
+product, and neither needs code: confirming a Supabase account (or disabling
+email confirmation) so the real sign-in round trip can be verified, and putting
+the database password in place so the migrations reach the hosted project. Both
+are in Blockers with the exact steps.
+
+The most valuable next piece of engineering is **push notifications**. It is
+already scaffolded: `TASK_MISSED` and `MEDICATION_MISSED` sit in the care-event
+vocabulary deliberately unemitted, `notification_devices` holds the tokens, and
+adding a sender would also close the residual revocation window recorded in
+Blockers. docs/08's escalation flow — reminder, grace period, overdue, notify
+the assignee, optionally notify the family — is the shape it should take.
+
+Everything else in the product documentation (messaging, notes, an activity
+inbox, the Next.js web app) is post-MVP by the roadmap's own ordering.
 
 ## Running It
 

@@ -4,6 +4,8 @@ import { router } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
+import { useUIStore } from '@/stores/ui-store';
+
 import { reminderDestination } from './routes';
 import { clearReminders, syncReminders } from './scheduler';
 import { notificationPermission, permissionAllowsDelivery } from './permission';
@@ -108,8 +110,21 @@ export function useReminderSync(isSignedIn: boolean, isRestoring: boolean) {
  * Separate from the synchronisation above because it is a different concern
  * with a different lifetime: it must be listening before the user taps, whether
  * or not a plan has loaded.
+ *
+ * A tap can arrive from a lock screen while the app is signed out or still
+ * restoring. Navigating then would land on a screen that immediately bounces to
+ * sign-in and the destination would be lost, so it is held and honoured once
+ * the user is through (plans/phase9.md §26).
  */
-export function useReminderTaps() {
+export function useReminderTaps(isSignedIn: boolean, isRestoring: boolean) {
+  const setPendingDestination = useUIStore((state) => state.setPendingDestination);
+
+  // Read through refs so the listener is subscribed once, at mount, rather than
+  // resubscribed on every session change — a tap that arrives during a gap
+  // between subscriptions is a notification that silently does nothing.
+  const ready = useRef(false);
+  ready.current = isSignedIn && !isRestoring;
+
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       // A notification can outlive the app version that scheduled it, so an
@@ -118,9 +133,34 @@ export function useReminderTaps() {
       const payload = readReminderPayload(response.notification.request.content.data);
       if (payload === null) return;
 
-      router.push(reminderDestination(payload));
+      const destination = reminderDestination(payload);
+
+      if (ready.current) {
+        router.push(destination);
+        return;
+      }
+      setPendingDestination(destination);
     });
 
     return () => subscription.remove();
-  }, []);
+  }, [setPendingDestination]);
+}
+
+/**
+ * Sends the user where a notification was trying to take them, once they are
+ * signed in.
+ *
+ * The destination is cleared before navigating, so a failed push cannot leave
+ * the app looping on the same target.
+ */
+export function usePendingDestination(isSignedIn: boolean, isRestoring: boolean) {
+  const pendingDestination = useUIStore((state) => state.pendingDestination);
+  const setPendingDestination = useUIStore((state) => state.setPendingDestination);
+
+  useEffect(() => {
+    if (isRestoring || !isSignedIn || pendingDestination === null) return;
+
+    setPendingDestination(null);
+    router.push(pendingDestination);
+  }, [isSignedIn, isRestoring, pendingDestination, setPendingDestination]);
 }

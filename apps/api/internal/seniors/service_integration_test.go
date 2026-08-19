@@ -3,6 +3,7 @@ package seniors_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -581,5 +582,61 @@ func TestUserHoldsDifferentRolesInDifferentCircles(t *testing.T) {
 		if membership.Senior.ID == own.Senior.ID && !canEdit {
 			t.Error("should be able to edit their own profile")
 		}
+	}
+}
+
+func TestTheCreatorOfACircleCanAdministerIt(t *testing.T) {
+	// A family circle used to have nobody who could ever revoke anybody. The
+	// daughter who sets it up is a family member, and members.manage is
+	// deliberately not a family-member default; the mother has no account to
+	// hold it; and an invitation can only delegate what the inviter already
+	// has. So a caregiver's access to somebody's medical information could be
+	// granted and never withdrawn (plans/phase9.md §§5, 40).
+	//
+	// Whoever creates a circle therefore holds members.manage, in every mode.
+	f := newFixture(t)
+	ctx := context.Background()
+
+	for _, testCase := range []struct {
+		mode seniors.CreateMode
+		role care.Role
+	}{
+		{seniors.CreateModeSelf, care.RoleSenior},
+		{seniors.CreateModeFamily, care.RoleFamilyMember},
+		{seniors.CreateModeProfessional, care.RoleProfessionalCaregiver},
+	} {
+		t.Run(string(testCase.mode), func(t *testing.T) {
+			principal := f.newUser(t, string(testCase.mode)+"-creator@example.com")
+
+			membership, err := f.service.Create(ctx, principal, seniors.CreateInput{
+				Mode:        testCase.mode,
+				DisplayName: "Amma",
+			})
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+
+			if membership.Relationship.Role != testCase.role {
+				t.Errorf("role = %q, want %q", membership.Relationship.Role, testCase.role)
+			}
+			if !membership.Relationship.Can(care.PermissionMembersManage) {
+				t.Errorf("the creator cannot administer the circle they created: %v",
+					membership.Relationship.Permissions.Strings())
+			}
+		})
+	}
+}
+
+func TestCircleAdministrationIsNotAFamilyMemberDefault(t *testing.T) {
+	// The other half of the same decision, and the reason it is granted to the
+	// creator rather than to the role: a relative invited to help should not be
+	// able to remove the person who invited them (docs/02).
+	if slices.Contains(care.DefaultPermissions(care.RoleFamilyMember), care.PermissionMembersManage) {
+		t.Error("members.manage has become a family-member default")
+	}
+	if slices.Contains(
+		care.DefaultPermissions(care.RoleProfessionalCaregiver), care.PermissionMembersManage,
+	) {
+		t.Error("members.manage has become a professional-caregiver default")
 	}
 }

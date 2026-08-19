@@ -16,8 +16,13 @@ import { useTheme } from '@/theme';
  * Home / Today.
  *
  * One screen for every care mode: what the user sees is decided by their
- * relationships, not by a separate app (docs/13-mvp-screen-map.md). Medication
- * and appointment content arrives in later phases.
+ * relationships, not by a separate app (docs/13-mvp-screen-map.md).
+ *
+ * It stays a list of people plus the caller's own work. Today's medication,
+ * tasks and appointments belong to a particular person, so they live on that
+ * person's dashboard; repeating them here would mean a caregiver with six
+ * clients scrolling through six days of care to find their own round
+ * (plans/phase9.md §8).
  */
 export default function HomeScreen() {
   const theme = useTheme();

@@ -6,7 +6,11 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { SessionProvider, useSession } from '@/features/auth/session-provider';
-import { useReminderSync, useReminderTaps } from '@/features/notifications/use-reminder-sync';
+import {
+  usePendingDestination,
+  useReminderSync,
+  useReminderTaps,
+} from '@/features/notifications/use-reminder-sync';
 import { createQueryClient } from '@/lib/query-client';
 import { ThemeProvider, useTheme } from '@/theme';
 
@@ -43,7 +47,8 @@ function Reminders() {
   const { isSignedIn, isRestoring } = useSession();
 
   useReminderSync(isSignedIn, isRestoring);
-  useReminderTaps();
+  useReminderTaps(isSignedIn, isRestoring);
+  usePendingDestination(isSignedIn, isRestoring);
 
   return null;
 }
