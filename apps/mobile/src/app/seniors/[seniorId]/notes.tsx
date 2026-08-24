@@ -3,7 +3,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
-import { Button, Card, Screen, Text, TextField } from '@/components/ui';
+import { Button, Card, Illustration, Screen, Text, TextField } from '@/components/ui';
 import { useCreateNote, useNotes, useUpdateNote } from '@/features/notes/use-notes';
 import { useSenior } from '@/features/seniors/use-seniors';
 import { ApiError } from '@/lib/api-error';
@@ -86,6 +86,7 @@ export default function NotesScreen() {
         </Card>
       ) : notes.data.length === 0 ? (
         <Card>
+          <Illustration name="communication" height={140} />
           <Text variant="sectionHeading">No notes yet</Text>
           <Text variant="body" color="secondary">
             The first observation added by the care circle will appear here.

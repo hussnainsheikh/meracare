@@ -30,5 +30,26 @@ font files have been modified or renamed.
 The runtime exports were derived deterministically from the approved source. The
 alternative `brand-mark-v2.png` is retained as an unselected concept for design
 history and is not referenced by the application. Store artwork and a social
-preview still require final export and review. No third-party illustration is
-currently bundled.
+preview still require final export and review.
+
+## unDraw illustrations
+
+- Creator: Katerina Limpitsouni / unDraw
+- License: [unDraw license](https://undraw.co/license), reviewed 2026-08-24
+- Usage: bundled MeraCare onboarding and empty-state artwork
+- Modifications: the primary `#6C63FF` accent was changed to MeraCare Deep Teal
+  `#0F766E`; transparent PNG runtime exports were rendered from the retained SVG
+  sources
+- Attribution: not required by the license; provenance is recorded here
+
+| Local asset     | Original illustration | Source                                                 |
+| --------------- | --------------------- | ------------------------------------------------------ |
+| `welcome-team`  | Team                  | https://undraw.co/illustration/team_85hs               |
+| `add-senior`    | Add user              | https://undraw.co/illustration/add-user_rbko           |
+| `all-caught-up` | Complete task         | https://undraw.co/illustration/complete-task_qgwk      |
+| `care-circle`   | Team collaboration    | https://undraw.co/illustration/team-collaboration_phnf |
+| `communication` | Chat                  | https://undraw.co/illustration/chat_qmyo               |
+
+The files live under `apps/mobile/assets/illustrations/undraw/`. They are part of
+MeraCare's interface and must not be redistributed as an illustration pack or
+used for AI/ML training. Recheck the linked license before release.

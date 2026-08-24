@@ -10,6 +10,8 @@ work. A checked item must have evidence; configuration must never be inferred.
 - [x] OpenAPI route contract in `docs/openapi.yaml`.
 - [x] Inter typography and bundled font license.
 - [x] Notification inbox, scheduler, local fallback, and Expo provider implementation.
+- [x] Five locally bundled, Deep-Teal unDraw onboarding/empty-state illustrations
+      with source and license records in `ASSET_LICENSES.md`.
 - [x] Bundle identifiers: `app.meracare.mobile`.
 
 ## Product approval required

@@ -3,7 +3,7 @@ import { can, roleLabel } from '@meracare/contracts';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Alert, View } from 'react-native';
 
-import { Button, Card, Screen, Text } from '@/components/ui';
+import { Button, Card, Illustration, Screen, Text } from '@/components/ui';
 import {
   useCircleMembers,
   useInvitations,
@@ -81,6 +81,16 @@ export default function CareCircleScreen() {
             })
           }
         />
+      ) : null}
+
+      {mayInvite && members.data.length <= 1 ? (
+        <Card>
+          <Illustration name="careCircle" height={150} />
+          <Text variant="sectionHeading">Build a trusted care circle</Text>
+          <Text variant="body" color="secondary">
+            Invite family or professional caregivers when you are ready to coordinate care.
+          </Text>
+        </Card>
       ) : null}
 
       <View style={{ gap: theme.spacing.md }}>

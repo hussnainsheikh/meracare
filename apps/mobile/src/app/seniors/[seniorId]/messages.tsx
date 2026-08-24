@@ -3,7 +3,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
-import { Button, Card, Screen, Text, TextField } from '@/components/ui';
+import { Button, Card, Illustration, Screen, Text, TextField } from '@/components/ui';
 import { useMarkMessagesRead, useMessages, useSendMessage } from '@/features/messages/use-messages';
 import { ApiError } from '@/lib/api-error';
 import { useTheme } from '@/theme';
@@ -87,6 +87,7 @@ export default function MessagesScreen() {
         </Card>
       ) : items.length === 0 ? (
         <Card>
+          <Illustration name="communication" height={140} />
           <Text variant="sectionHeading">No messages yet</Text>
           <Text variant="body" color="secondary">
             Start the conversation when there is something the circle should know.

@@ -183,6 +183,13 @@ assets/
     storyset/
 ```
 
+The implemented MVP set uses five locally bundled unDraw illustrations:
+`welcome-team`, `add-senior`, `all-caught-up`, `care-circle`, and
+`communication`. Screens reference semantic names through the shared
+`Illustration` component rather than vendor filenames. The component provides a
+consistent restrained frame and keeps artwork decorative by default so nearby
+headings and instructions are not announced twice by assistive technology.
+
 ## Illustration Placement
 
 ### Onboarding

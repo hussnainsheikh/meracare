@@ -23,6 +23,10 @@ The documented MVP feature surface is implemented in the repository. On
 added end to end: migration, authorization, API, contracts, mobile screens, read
 state/activity behavior, and automated tests. Apple OAuth, the path-complete
 OpenAPI contract, and bundled Inter typography were added in the same pass.
+The visual pass then adopted the approved MeraCare mark and added five locally
+bundled, Deep-Teal unDraw illustrations for onboarding and empty states. Their
+source SVGs, runtime PNGs, modifications, and license records are retained in
+the repository.
 
 This does **not** mean the product is ready to publish. Apple and Google console
 configuration, EAS/push credentials, physical-device acceptance, legal approval
@@ -36,7 +40,7 @@ and replay safety is documented as domain-transition idempotency rather than an
 HTTP header the server did not consume.
 
 Current verification: mobile TypeScript is clean, lint has no errors (one
-pre-existing test warning), and all 296 Jest tests pass. The complete Go suite,
+pre-existing test warning), and all 302 Jest tests pass. The complete Go suite,
 including integration tests against local PostgreSQL, passes with `-race` and
 `-count=1`. Migration `0010` was applied both locally in tests and to the
 configured hosted Supabase database; hosted migration status reports versions
@@ -1190,8 +1194,8 @@ longer release blockers.
 14. **Category in words rather than an icon.** Each row carries "Task",
     "Medication", "Appointment" or "Care circle" as a caption. It fills the slot
     an icon would, and it is legible to somebody who cannot make out a
-    sixteen-pixel glyph — which matters more here than iconography. The brand
-    icon set is still outstanding regardless (see Blockers).
+    sixteen-pixel glyph — which matters more here than iconography. The later
+    brand and illustration pass did not change this activity-row decision.
 
 15. **The feed is deliberately quiet.** Most rows are neutral. A timeline where
     every entry is coloured is one where nothing stands out, and most care
