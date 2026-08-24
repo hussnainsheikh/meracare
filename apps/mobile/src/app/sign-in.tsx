@@ -2,7 +2,7 @@ import { Redirect } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { Button, Card, GoogleButton, Screen, Text, TextField } from '@/components/ui';
+import { AppleButton, Button, Card, GoogleButton, Screen, Text, TextField } from '@/components/ui';
 import { useSession } from '@/features/auth/session-provider';
 import { useAuthActions } from '@/features/auth/use-auth-actions';
 import { useTheme } from '@/theme';
@@ -18,8 +18,16 @@ import { useTheme } from '@/theme';
 export default function SignInScreen() {
   const theme = useTheme();
   const { isSignedIn } = useSession();
-  const { signIn, signUp, signInWithGoogle, pending, isSubmitting, error, clearError } =
-    useAuthActions();
+  const {
+    signIn,
+    signUp,
+    signInWithApple,
+    signInWithGoogle,
+    pending,
+    isSubmitting,
+    error,
+    clearError,
+  } = useAuthActions();
 
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
   const [email, setEmail] = useState('');
@@ -35,6 +43,11 @@ export default function SignInScreen() {
   async function handleGoogle() {
     setNotice(null);
     await signInWithGoogle();
+  }
+
+  async function handleApple() {
+    setNotice(null);
+    await signInWithApple();
   }
 
   async function handleSubmit() {
@@ -127,6 +140,7 @@ export default function SignInScreen() {
           loading={pending === 'google'}
           disabled={isSubmitting}
         />
+        <AppleButton onPress={handleApple} loading={pending === 'apple'} disabled={isSubmitting} />
       </View>
     </Screen>
   );

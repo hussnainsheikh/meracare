@@ -44,3 +44,15 @@ func TestFirstMigrationIsInit(t *testing.T) {
 		t.Errorf("first migration = %d_%s, want 0001_init", migrations[0].Version, migrations[0].Name)
 	}
 }
+
+func TestLatestMigrationCompletesTheMVPCoordinationDomains(t *testing.T) {
+	migrations, err := database.LoadMigrations()
+	if err != nil {
+		t.Fatalf("LoadMigrations() error = %v", err)
+	}
+
+	latest := migrations[len(migrations)-1]
+	if latest.Version != 10 || latest.Name != "notes_and_messages" {
+		t.Errorf("latest migration = %d_%s, want 0010_notes_and_messages", latest.Version, latest.Name)
+	}
+}

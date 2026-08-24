@@ -1,4 +1,10 @@
 import { QueryClientProvider } from '@tanstack/react-query';
+import {
+  Inter_400Regular,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  useFonts,
+} from '@expo-google-fonts/inter';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
@@ -15,8 +21,15 @@ import { createQueryClient } from '@/lib/query-client';
 import { ThemeProvider, useTheme } from '@/theme';
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
   // One client per app instance; created lazily so it survives Fast Refresh.
   const [queryClient] = useState(createQueryClient);
+
+  if (!fontsLoaded && !fontError) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -250,7 +250,6 @@ function useDoseAction(seniorId: string, operationType: 'take' | 'skip') {
           {
             method: 'POST',
             body: notes === undefined ? undefined : { notes },
-            idempotencyKey: operationId,
           },
         );
       } catch (error) {
@@ -328,7 +327,7 @@ async function invalidateOneMedication(
   ]);
 }
 
-/** A unique id for one user action, used as the idempotency key. */
+/** A unique local queue id for one user action. */
 function newOperationId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

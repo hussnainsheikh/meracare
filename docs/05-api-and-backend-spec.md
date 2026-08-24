@@ -11,6 +11,8 @@
 -   Structured logging
 -   OpenAPI documentation
 
+The maintained machine-readable contract is [`openapi.yaml`](openapi.yaml).
+
 ## API Principles
 
 -   Version APIs: `/v1/...`
@@ -19,7 +21,10 @@
 -   ISO-8601 timestamps.
 -   Explicit validation.
 -   Relationship-based authorization.
--   Idempotency for mutation endpoints where retries are possible.
+-   Semantic idempotency for retryable terminal actions: repeating the same
+    task, dose, or appointment outcome returns the original result and writes
+    no duplicate care event. Introduce stored HTTP idempotency keys only for a
+    future mutation whose result cannot be derived safely from domain state.
 
 ## Core Endpoint Groups
 
@@ -95,6 +100,7 @@ GET /v1/seniors/{id}/activity?cursor=...
 ``` text
 GET  /v1/seniors/{id}/messages?cursor=...
 POST /v1/seniors/{id}/messages
+POST /v1/seniors/{id}/messages/read
 ```
 
 ## Pagination

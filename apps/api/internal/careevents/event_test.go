@@ -99,7 +99,7 @@ func TestEntityTypesAreRecognised(t *testing.T) {
 // TASK_MISSED and MEDICATION_MISSED are derived from the clock rather than
 // performed by anybody — nothing writes "missed" anywhere, precisely so no
 // background sweep has to be alive for the data to be true. Emitting them would
-// mean inventing the sweep Phases 4 and 5 refused. NOTE_ADDED has no domain yet.
+// mean inventing the sweep Phases 4 and 5 refused.
 func TestDocumentedButUnemittedTypesAreNotEmittedAnywhere(t *testing.T) {
 	sources := goSources(t, filepath.Join("..", ".."))
 

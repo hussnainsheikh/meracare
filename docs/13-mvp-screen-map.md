@@ -61,6 +61,11 @@ appropriate.
 22. Invite member
 23. Messages
 
+Notes and Messages remain required MVP screens. Both were implemented on
+2026-08-24 using the same senior-scoped relationship and permission model as the
+rest of the application. The senior dashboard exposes each destination only to
+members with its required permission.
+
 ## Settings
 
 24. Profile

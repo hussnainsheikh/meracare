@@ -37,9 +37,9 @@ export function readDoseEntityId(
 /**
  * Replays one queued dose.
  *
- * The operation id travels as the idempotency key, so a mutation that reached
- * the server before the connection dropped is recognised rather than recording
- * a second dose of the same medicine (plans/phase5.md §21).
+ * The server's terminal transition is semantically idempotent: replaying the
+ * same action returns the original dose and emits no second care event
+ * (plans/phase5.md §21).
  */
 export async function replayMedicationOperation(operation: SyncOperation): Promise<ReplayOutcome> {
   const dose = readDoseEntityId(operation.entityId);
@@ -57,7 +57,6 @@ export async function replayMedicationOperation(operation: SyncOperation): Promi
       {
         method: 'POST',
         body: notes === null ? undefined : { notes },
-        idempotencyKey: operation.operationId,
       },
     );
     return { kind: 'applied' };

@@ -91,6 +91,11 @@ Recommended starting scale:
 The exact platform font implementation can vary between React Native and
 web while retaining the same typographic scale.
 
+The Expo application bundles Inter 400, 600, and 700 through
+`@expo-google-fonts/inter` and maps the semantic regular, semibold, and bold
+tokens to those faces. Font and candidate brand provenance is recorded in
+`ASSET_LICENSES.md`.
+
 ## Accessibility
 
 The visual system is specifically designed for older adults.
@@ -162,6 +167,10 @@ flow.
     for every shipped asset.
 -   Maintain an `ASSET_LICENSES.md` file once production assets are
     selected.
+-   `apps/mobile/assets/images/brand-mark-v2.png` is an AI-generated review
+    candidate, not an approved production icon. It must not replace the existing
+    app icon or splash until product approves the mark and deterministic
+    platform/store exports are prepared.
 -   Review the current license for each asset before shipping. Licenses
     can change independently of our product documentation.
 

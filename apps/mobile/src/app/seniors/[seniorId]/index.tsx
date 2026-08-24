@@ -288,6 +288,44 @@ function Dashboard({ profile }: { profile: Senior }) {
         </Card>
       ) : null}
 
+      {can(profile, 'notes.view') ? (
+        <Card>
+          <Text variant="sectionHeading">Care notes</Text>
+          <Text variant="body" color="secondary">
+            Observations shared by the people caring for {profile.displayName}.
+          </Text>
+          <Button
+            variant="secondary"
+            label="View care notes"
+            onPress={() =>
+              router.push({
+                pathname: '/seniors/[seniorId]/notes',
+                params: { seniorId: profile.id },
+              })
+            }
+          />
+        </Card>
+      ) : null}
+
+      {can(profile, 'messages.participate') ? (
+        <Card>
+          <Text variant="sectionHeading">Messages</Text>
+          <Text variant="body" color="secondary">
+            Coordinate privately with this care circle.
+          </Text>
+          <Button
+            variant="secondary"
+            label="Open messages"
+            onPress={() =>
+              router.push({
+                pathname: '/seniors/[seniorId]/messages',
+                params: { seniorId: profile.id },
+              })
+            }
+          />
+        </Card>
+      ) : null}
+
       {can(profile, 'members.view') ? (
         <Card>
           <Text variant="sectionHeading">Care circle</Text>

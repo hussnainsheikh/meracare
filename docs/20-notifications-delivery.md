@@ -220,6 +220,12 @@ keychain, so registration is an upsert rather than an accumulation. A user has
 several devices and each is pushed. A registration with no token is still
 recorded — that is an install that has not been granted permission.
 
+Sign-out is intentionally online: the app deactivates this install before the
+Supabase session is removed. If the API cannot confirm deactivation, sign-out is
+refused rather than leaving a phone registered to an account it no longer
+appears to hold. The app also drains its offline care queue before erasing local
+data, so cleanup cannot trade privacy for data loss.
+
 Tokens are credentials for making somebody's phone buzz: never returned by any
 endpoint, never logged, never written into `last_error`, and only ever
 registerable for the authenticated caller. `DeviceResponse` reports

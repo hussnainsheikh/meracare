@@ -55,16 +55,9 @@ describe('replayMedicationOperation', () => {
     const outcome = await replayMedicationOperation(queued());
 
     expect(outcome).toEqual({ kind: 'applied' });
-    const [path, options] = mockApiRequest.mock.calls[0] as [
-      string,
-      { method: string; idempotencyKey: string },
-    ];
+    const [path, options] = mockApiRequest.mock.calls[0] as [string, { method: string }];
     expect(path).toBe('/medications/med-1/instances/dose-1/take');
     expect(options.method).toBe('POST');
-    // The operation id is the idempotency key, so a dose that reached the
-    // server before the connection dropped is recognised rather than recorded
-    // a second time.
-    expect(options.idempotencyKey).toBe('op-1');
   });
 
   it('carries the note a skip was recorded with', async () => {

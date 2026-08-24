@@ -1,12 +1,13 @@
 # Implementation Status
 
-Last updated: 2026-08-21
+Last updated: 2026-08-24
 
 ## Current Phase
 
-**Phase 11 — Notifications & Reminders: code complete; push delivery unverified.**
+**MVP repository implementation complete; release configuration and acceptance
+remain.**
 
-The MVP (Phases 1–9) is complete. Phase 10 added Google sign-in. Phase 11 adds
+The implemented coordination baseline (Phases 1–9) is complete. Phase 10 added Google sign-in. Phase 11 adds
 the server-side notification system: a persisted inbox, five notification types,
 a scheduler that materialises and delivers, an Expo push provider behind an
 interface, retries, and the mobile inbox with an unread badge. Everything below
@@ -16,6 +17,30 @@ because MeraCare has no EAS project and no push credentials. See Blocker 7 and
 
 Phase 10's Google sign-in remains code complete and blocked on console
 configuration — Blocker 6 and `docs/19-google-authentication.md`.
+
+The documented MVP feature surface is implemented in the repository. On
+2026-08-24 standalone care notes and senior-scoped care-circle messaging were
+added end to end: migration, authorization, API, contracts, mobile screens, read
+state/activity behavior, and automated tests. Apple OAuth, the path-complete
+OpenAPI contract, and bundled Inter typography were added in the same pass.
+
+This does **not** mean the product is ready to publish. Apple and Google console
+configuration, EAS/push credentials, physical-device acceptance, legal approval
+of the privacy policy, store listing values, and approval/export of the
+production brand remain external release gates. See `21-release-readiness.md`.
+
+The same 2026-08-24 hardening pass made sign-out drain offline care, deactivate
+the current device, clear OS reminders, and remove SQLite data before the
+Supabase session ends. Browser sessions now use tab-scoped `sessionStorage`,
+and replay safety is documented as domain-transition idempotency rather than an
+HTTP header the server did not consume.
+
+Current verification: mobile TypeScript is clean, lint has no errors (one
+pre-existing test warning), and all 296 Jest tests pass. The complete Go suite,
+including integration tests against local PostgreSQL, passes with `-race` and
+`-count=1`. Migration `0010` was applied both locally in tests and to the
+configured hosted Supabase database; hosted migration status reports versions
+`0001` through `0010` up to date.
 
 ## Verification Is Local
 
@@ -62,11 +87,14 @@ apps/
       config/              environment configuration
       database/            pgx pool, embedded migrations + runner, error helpers,
                            Querier and InTx for transactional writes
-        migrations/        0001_init … 0008_notifications
+        migrations/        0001_init … 0010_notes_and_messages
       invitations/         tokens, lifecycle, accept; /v1/invitations
       medications/         medicines, schedules, doses; /v1/medications
+      messages/            senior-scoped chat + read state
       members/             care-circle membership; /v1/seniors/{id}/members
-      notifications/       preferences, device registration, reminder plan
+      notes/                senior care notes + NOTE_ADDED activity
+      notifications/       preferences, devices, reminder plan, inbox, scheduler,
+                           Expo push provider
       paging/              shared keyset cursor for every paged history
       recurrence/          shared RRULE subset and timezone-aware expansion
       tasks/               care tasks, completion; /v1/tasks
@@ -82,7 +110,7 @@ apps/
   mobile/                  Expo SDK 57 / React Native 0.86 / Expo Router
     src/
       app/                 index, sign-in, home, onboarding, seniors/[id]/*
-                           (incl. activity), appointments/[id]/*,
+                           (incl. activity, notes, messages), appointments/[id]/*,
                            medications/[id]/*, tasks/[id], invitations/[token],
                            settings/notifications
       components/ui/       ActivityRow, AppointmentCard, Button, Card,
@@ -93,6 +121,8 @@ apps/
       features/auth/       session restore, sign in/up/out
       features/circle/     members, invitations, accept
       features/medications/ medication queries, mutations, offline replay
+      features/messages/   senior-scoped messages, paging, read state
+      features/notes/      care-note queries and mutations
       features/notifications/ preferences, device registration, OS permission,
                            reminder reconciliation, deep links
       features/sync/       one offline queue drain across every entity
@@ -715,58 +745,19 @@ docs/12 or docs/17 was changed.
     like every other profile field. There is no role-based rule for it, which is
     what the Phase 3 brief asked to avoid.
 
-## Blockers
+## Release Gates and Resolved Blockers
 
-1. **The real sign-in round trip is still unexercised — blocked on email
-   confirmation.** Attempted again in Phase 9 (plans/phase9.md §28), with the
-   same result: the account created during the Phase 8 attempt still answers
-   `email_not_confirmed` to a password grant, so the project's configuration is
-   unchanged. No further account was created. What is established, and what is
-   not:
+1. **Resolved — real email/password authentication reached the Go API.** A
+   confirmed user signed in through the application and authenticated requests
+   resolved to the expected application `user_id`, as shown by the successful
+   protected requests in the API logs on 2026-08-24. JWT verification and the
+   application-user mapping are therefore exercised against the configured
+   Supabase project. Apple and Google remain separate provider gates below.
 
-   - The JWKS endpoint is reachable and publishes an ES256 key.
-   - The API, booted in asymmetric mode against the real project, logs
-     `loaded Supabase signing keys` at startup, answers `/readyz` 200, and
-     rejects both a missing and a forged bearer token with 401
-     `UNAUTHENTICATED`. So the API genuinely verifies against the live
-     project's published keys. Phase 8 re-ran this against the new
-     `/v1/notifications/*` routes: all three answer 401 unauthenticated and 401
-     to a forged token.
-   - **What could not be done:** obtain a genuine token. The project requires
-     email confirmation. A sign-up through `/auth/v1/signup` with the anon key
-     returns 200 but no session, and the password grant then fails with
-     `email_not_confirmed`. Confirming requires access to the recipient inbox,
-     and minting or confirming a user directly would need the `service_role`
-     key, which is deliberately not available here.
-   - Steps 4 and 5 of §32 — the token resolving to the correct application user,
-     and that same context reaching an authorized activity request — therefore
-     remain **unverified**. They are not claimed.
-
-   **To close it**, one of: disable email confirmation for the project (Auth →
-   Providers → Email) and re-run the check; or confirm a real address and sign
-   in with it once. Either takes a few minutes and needs no code change.
-
-   Note: two unconfirmed accounts were created in the Supabase project during
-   these attempts — `phase7.verification@gmail.com` and
-   `phase8.verification@gmail.com`. Neither has a session or an application
-   user; both can be deleted from the Auth dashboard.
-2. **Migrations have not been applied to the hosted Supabase project.**
-   `apps/api/.env` currently points `DATABASE_URL` at the local container, which
-   is the right setting for development and is what every check in Phases 1–9
-   ran against. The hosted setting is documented in `apps/api/.env.example`: the
-   **session pooler**
-   (`postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`),
-   which works over IPv4 — unlike the direct `db.<ref>.supabase.co` host, which
-   resolves to IPv6 only and has no route from this network.
-
-   When the pooler string was configured during Phase 8 it failed authentication
-   (`failed SASL auth ... for user "postgres"`, SQLSTATE 28P01), so the password
-   in use was not the right one. Migrations `0001`–`0008` are therefore **not**
-   on the hosted project.
-
-   **To close it**, put the project's database password into `apps/api/.env`
-   using the pooler form above — never into a commit or a chat — and run
-   `pnpm api:migrate`.
+2. **Resolved — hosted migrations are current.** The migration runner applied
+   `0010_notes_and_messages` to the configured hosted Supabase database on
+   2026-08-24 and then reported all versions `0001`–`0010` up to date. The local
+   integration suite independently rebuilds and verifies the same schema.
 
 3. **Push delivery and real-device notification behaviour are unverified.**
    No physical iOS or Android device and no push credentials were available, so
@@ -779,9 +770,8 @@ docs/12 or docs/17 was changed.
    that a scheduled reminder actually fires, that reopening the app does not
    duplicate it, and that tapping it opens the right screen.
 
-   Push notifications are not implemented at all — there is no sender, and no
-   Expo/APNs/FCM code anywhere in the repository. Device registrations are
-   stored so that the phase which adds one has the tokens it needs.
+   Server push is implemented and tested through a stand-in Expo endpoint, but
+   remains disabled without an EAS project and credentials; see Blocker 7.
 
 4. **A revoked caregiver's already-scheduled reminders survive until their app
    next reconciles.** Server-side eligibility is authoritative and immediate:
@@ -789,13 +779,17 @@ docs/12 or docs/17 was changed.
    reminders are scheduled on the device, and the device only learns this when
    it next fetches the plan — on foreground, or on a query refetch. The window
    is bounded by the 7-day horizon and in practice by how soon the app is next
-   opened. Closing it entirely would need a push to the revoked device telling
-   it to clear, which is the push phase's work.
+   opened. Server-delivered notifications stop immediately because a revoked
+   relationship leaves the scheduler roster. The residual window applies only
+   while the installation is using the local-reminder fallback.
 
-5. **Brand assets are still the Expo template placeholders.** `assets/images`
-   holds the generated icon/splash. Real MeraCare icon, splash, and the first
-   unDraw/Storyset illustrations are needed, along with `ASSET_LICENSES.md`
-   (docs/18).
+5. **The production brand has not been approved.** A new generated review
+   candidate exists at `apps/mobile/assets/images/brand-mark-v2.png`, and
+   `ASSET_LICENSES.md` records its provenance and the Inter license.
+   The candidate deliberately does not replace the shipping icon or splash:
+   product approval and deterministic iOS, Android, web, and store exports are
+   still required. Store URLs, badges, and a social preview also depend on the
+   final listings and approved mark.
 
 6. **Google sign-in cannot be exercised — the provider is not enabled.** The
    client is complete and the failure is confirmed to be configuration, not
@@ -822,8 +816,8 @@ docs/12 or docs/17 was changed.
    been observed. `docs/19-google-authentication.md` ends with the seven-step
    manual test to run once the consoles are configured.
 
-   Note this compounds Blocker 1: even with Google enabled, a *linked* sign-in
-   needs a confirmed email/password account to link to.
+   A linked-account acceptance test still needs a confirmed email/password
+   account whose address matches the enabled Google identity.
 
 7. **No push notification has ever been delivered to a real device.** The
    whole path exists and is tested up to the provider boundary — the scheduler,
@@ -856,26 +850,29 @@ docs/12 or docs/17 was changed.
    `docs/20-notifications-delivery.md` has the setup steps and the seven-step
    manual test to run once a device build exists.
 
+8. **Apple sign-in needs provider configuration and platform acceptance.** The
+   application implementation uses Supabase Apple OAuth with the same PKCE
+   callback flow as Google, and its UI and action handling are tested. Completing
+   the flow needs an Apple Developer Services ID/key, the Supabase Apple provider
+   secret, approved redirect URLs, and real iOS/web sign-in tests. Exact setup and
+   acceptance steps are in `docs/22-apple-authentication.md`.
+
 ## Pending
 
-Near-term, before or alongside Phase 2:
+The documented MVP feature surface is implemented. What remains is release
+ownership and external verification, not another application domain:
 
-- **Apple sign-in** once the Supabase project has the provider configured
-  (docs/12). Google is implemented (Phase 10) and slots in beside it in
-  `use-auth-actions.ts`; Apple is the same shape.
-- **OpenAPI document** for `/v1` (docs/05 lists OpenAPI as the contract format).
-  Deferred until there are enough endpoints for it to be worth maintaining.
-- **Inter typography** — the type scale is in place, but the Inter font files are
-  not yet bundled, so the platform default renders at those sizes.
+- configure and accept Apple and Google sign-in in their provider consoles;
+- create the EAS project, add push credentials, and run iOS/Android device tests;
+- approve a production mark and generate the complete platform/store asset set;
+- provide operator/contact/retention/jurisdiction details, obtain legal approval
+  of the privacy policy, and publish its URL;
+- create the store listings, URLs, badges, screenshots, and social preview;
+- complete family, professional-caregiver, accessibility, and intermittent-
+  connectivity acceptance testing recorded in `21-release-readiness.md`.
 
-Later phases, unchanged from docs/14 and the Phase 1 plan:
-
-- Phase 2 — User + SeniorProfile + CareRelationship, solo mode, senior dashboard
-- Phase 3 — invitations and care circle
-- Phase 4 — tasks; Phase 5 — medication; Phase 6 — appointments
-- Phase 7 — care events and activity; Phase 8 — notifications
-- Phase 9 — dashboards; Phase 10 — messaging
-- Phase 11 — offline (`expo-sqlite`, sync queue); Phase 12 — quality
+Email/password authentication and hosted migrations are now verified and are no
+longer release blockers.
 
 ## Architectural Decisions Taken in Phase 4
 
@@ -1446,16 +1443,17 @@ string cannot reach the dashboard.
   worker to do. Push delivery retries were named there as the first genuine need,
   and are exactly what the Phase 11 scheduler exists for.
 
-## After the MVP
+## Remaining MVP Boundary
 
-The MVP is complete and work stops here. Nothing below has been started, and
-nothing below should be started without an explicit decision.
+The care coordination feature surface is complete, including care notes and
+care-circle messaging. The repository is ready for product acceptance, but that
+acceptance and the external release setup must finish before calling the MVP
+launched or beginning broad V2/V3/V4 expansion.
 
-Two environment items are the only things standing between this and a running
-product, and neither needs code: confirming a Supabase account (or disabling
-email confirmation) so the real sign-in round trip can be verified, and putting
-the database password in place so the migrations reach the hosted project. Both
-are in Blockers with the exact steps.
+External configuration is required before launch: Apple and Google provider
+configuration, an EAS project and push credentials, production brand/store
+assets, an approved privacy policy, and device/user acceptance. Each is recorded
+in Release Gates above with its verification boundary.
 
 **Push notifications** were the most valuable next piece of engineering, and
 Phase 11 built them: docs/08's escalation flow — reminder, grace period,
@@ -1468,8 +1466,8 @@ Phase 11 alerts on overdue tasks without writing a "missed" state anywhere.
 What still needs doing before push is real is **configuration, not code** —
 an EAS project, push credentials, and a device build (Blocker 7).
 
-Everything else in the product documentation (messaging, notes, an activity
-inbox, the Next.js web app) is post-MVP by the roadmap's own ordering.
+The future Next.js application, browser push, advanced notification channels,
+and everything in `docs/15-v2-v3-v4-roadmap.md` remain post-MVP.
 
 ## Running It
 
