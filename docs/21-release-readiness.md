@@ -14,9 +14,11 @@ work. A checked item must have evidence; configuration must never be inferred.
 
 ## Product approval required
 
-- [ ] Approve or reject `apps/mobile/assets/images/brand-mark-v2.png`.
-- [ ] Produce deterministic icon, adaptive-icon, favicon, splash, and social-card
-      exports from the approved source artwork.
+- [x] Approve `apps/mobile/assets/images/brand-mark.png` as the MeraCare mark.
+- [x] Produce deterministic runtime icon, adaptive-icon, monochrome, favicon, and
+      splash exports from the approved source artwork.
+- [ ] Produce and approve store artwork and a social-card export from the
+      approved source artwork.
 - [ ] Approve screenshots and store copy.
 
 ## Console configuration required

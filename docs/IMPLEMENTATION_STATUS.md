@@ -26,8 +26,8 @@ OpenAPI contract, and bundled Inter typography were added in the same pass.
 
 This does **not** mean the product is ready to publish. Apple and Google console
 configuration, EAS/push credentials, physical-device acceptance, legal approval
-of the privacy policy, store listing values, and approval/export of the
-production brand remain external release gates. See `21-release-readiness.md`.
+of the privacy policy, store listing values, and store/social artwork exports
+remain external release gates. See `21-release-readiness.md`.
 
 The same 2026-08-24 hardening pass made sign-out drain offline care, deactivate
 the current device, clear OS reminders, and remove SQLite data before the
@@ -783,13 +783,12 @@ docs/12 or docs/17 was changed.
    relationship leaves the scheduler roster. The residual window applies only
    while the installation is using the local-reminder fallback.
 
-5. **The production brand has not been approved.** A new generated review
-   candidate exists at `apps/mobile/assets/images/brand-mark-v2.png`, and
-   `ASSET_LICENSES.md` records its provenance and the Inter license.
-   The candidate deliberately does not replace the shipping icon or splash:
-   product approval and deterministic iOS, Android, web, and store exports are
-   still required. Store URLs, badges, and a social preview also depend on the
-   final listings and approved mark.
+5. **Resolved for runtime branding; store artwork remains.** Product approved
+   `apps/mobile/assets/images/brand-mark.png` on 2026-08-24. The application now
+   uses deterministic iOS/general, Android adaptive/monochrome, splash, and
+   favicon exports derived from it; `ASSET_LICENSES.md` records provenance. Store
+   artwork, screenshots, badges, and a social preview still require their final
+   listing dimensions and review.
 
 6. **Google sign-in cannot be exercised — the provider is not enabled.** The
    client is complete and the failure is confirmed to be configuration, not
@@ -1451,7 +1450,7 @@ acceptance and the external release setup must finish before calling the MVP
 launched or beginning broad V2/V3/V4 expansion.
 
 External configuration is required before launch: Apple and Google provider
-configuration, an EAS project and push credentials, production brand/store
+configuration, an EAS project and push credentials, production store/social
 assets, an approved privacy policy, and device/user acceptance. Each is recorded
 in Release Gates above with its verification boundary.
 

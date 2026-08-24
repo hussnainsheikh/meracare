@@ -167,10 +167,10 @@ flow.
     for every shipped asset.
 -   Maintain an `ASSET_LICENSES.md` file once production assets are
     selected.
--   `apps/mobile/assets/images/brand-mark-v2.png` is an AI-generated review
-    candidate, not an approved production icon. It must not replace the existing
-    app icon or splash until product approves the mark and deterministic
-    platform/store exports are prepared.
+-   `apps/mobile/assets/images/brand-mark.png` is the product-approved MeraCare
+    mark. Runtime icon, adaptive-icon, monochrome, splash, and favicon exports
+    derive from it. `brand-mark-v2.png` is an unselected concept and is not used
+    by the application. Store and social-card exports still require final review.
 -   Review the current license for each asset before shipping. Licenses
     can change independently of our product documentation.
 
