@@ -42,12 +42,14 @@ GET    /v1/seniors
 POST   /v1/seniors
 GET    /v1/seniors/{id}
 PATCH  /v1/seniors/{id}
+DELETE /v1/seniors/{id}
 ```
 
 ### Care Circle
 
 ``` text
 GET    /v1/seniors/{id}/members
+DELETE /v1/seniors/{id}/members/me
 POST   /v1/seniors/{id}/invitations
 DELETE /v1/seniors/{id}/members/{memberId}
 PATCH  /v1/seniors/{id}/members/{memberId}
@@ -70,8 +72,13 @@ POST   /v1/tasks/{id}/skip
 GET    /v1/seniors/{id}/medications
 POST   /v1/seniors/{id}/medications
 PATCH  /v1/medications/{id}
+DELETE /v1/medications/{id}
 POST   /v1/medications/{id}/instances/{instanceId}/take
 ```
+
+Medication deletion returns `204` only before a taken/skipped dose exists; it
+returns `409` once history requires the medication to be stopped instead.
+Senior deletion returns `{ "disposition": "deleted" | "archived" }`.
 
 ### Appointments
 

@@ -154,6 +154,8 @@
 -   CRUD.
 -   Schedule.
 -   Completion.
+-   **Implemented:** mistaken-entry deletion before dose history; otherwise
+    stop and retain history.
 
 ### 26. Appointments
 
@@ -248,3 +250,5 @@ MVP is complete when:
 -   Core workflows work with intermittent connectivity.
 -   Authorization prevents unauthorized access.
 -   Critical flows have automated tests.
+-   Managed profiles can be safely deleted when empty or archived once care
+    history exists, and caregivers can leave without orphaning coordination.

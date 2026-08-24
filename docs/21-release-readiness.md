@@ -7,6 +7,8 @@ work. A checked item must have evidence; configuration must never be inferred.
 
 - [x] Email/password, Google OAuth, and Apple OAuth client flows use Supabase Auth.
 - [x] Notes and senior-scoped care-circle messaging, including read state.
+- [x] Safe lifecycle controls: conditional medication deletion, managed-profile
+      delete/archive, caregiver leave protection, and professional creator setup permissions.
 - [x] OpenAPI route contract in `docs/openapi.yaml`.
 - [x] Inter typography and bundled font license.
 - [x] Notification inbox, scheduler, local fallback, and Expo provider implementation.

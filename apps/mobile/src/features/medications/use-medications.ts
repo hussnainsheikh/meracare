@@ -166,6 +166,22 @@ export function useUpdateMedication(seniorId: string) {
   });
 }
 
+/** Permanently removes a mistaken entry before any dose has been recorded. */
+export function useDeleteMedication(seniorId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (medicationId: string) =>
+      apiRequest<void>(`/medications/${medicationId}`, { method: 'DELETE' }),
+    onSuccess: (_result, medicationId) => {
+      queryClient.removeQueries({ queryKey: medicationKeys.detail(medicationId) });
+      queryClient.removeQueries({ queryKey: medicationKeys.schedules(medicationId) });
+      queryClient.removeQueries({ queryKey: medicationKeys.history(medicationId) });
+      void invalidateMedications(queryClient, seniorId);
+    },
+  });
+}
+
 /** Adds a time of day to a medication. */
 export function useAddMedicationSchedule(seniorId: string, medicationId: string) {
   const queryClient = useQueryClient();

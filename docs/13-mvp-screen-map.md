@@ -66,6 +66,12 @@ Notes and Messages remain required MVP screens. Both were implemented on
 rest of the application. The senior dashboard exposes each destination only to
 members with its required permission.
 
+Lifecycle actions stay on their existing context screens rather than adding
+new screens: medication details offers conditional mistaken-entry deletion;
+the Care circle offers caregiver self-removal; and the managed senior profile
+card offers delete-or-archive removal. Each uses a destructive confirmation and
+permission-aware visibility.
+
 ## Settings
 
 24. Profile

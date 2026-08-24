@@ -69,6 +69,7 @@ func (h *Handler) MedicationRoutes() chi.Router {
 	router.Route("/{"+medicationIDParam+"}", func(medication chi.Router) {
 		medication.Get("/", h.get)
 		medication.Patch("/", h.update)
+		medication.Delete("/", h.deleteMistaken)
 
 		medication.Get("/schedules", h.listSchedules)
 		medication.Post("/schedules", h.addSchedule)
@@ -185,6 +186,18 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeDetail(w, r, medication)
+}
+
+func (h *Handler) deleteMistaken(w http.ResponseWriter, r *http.Request) {
+	medication, ok := h.authorizedMedication(w, r, care.PermissionMedicationsManage)
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteMistaken(r.Context(), medication.ID); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // updateRequest is the `PATCH /v1/medications/{id}` body. An absent field is
@@ -631,6 +644,10 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.Is(err, ErrInvalidTransition):
 		httpx.WriteError(w, r, httpx.ErrConflict(
 			"Somebody has already recorded a different outcome for this dose."))
+
+	case errors.Is(err, ErrRecordedHistory):
+		httpx.WriteError(w, r, httpx.ErrConflict(
+			"A dose has already been recorded. Stop this medication to preserve its history."))
 
 	default:
 		httpx.WriteError(w, r, httpx.ErrInternal(err))

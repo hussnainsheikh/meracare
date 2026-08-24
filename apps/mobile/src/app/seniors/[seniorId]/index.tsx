@@ -13,14 +13,14 @@ import {
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useMemo, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Screen, Text } from '@/components/ui';
 import { useActivity } from '@/features/activity/use-activity';
 import { useAppointments } from '@/features/appointments/use-appointments';
 import { useCircleMembers } from '@/features/circle/use-circle';
 import { useMedicationDoses } from '@/features/medications/use-medications';
-import { useSenior } from '@/features/seniors/use-seniors';
+import { useRemoveSenior, useSenior } from '@/features/seniors/use-seniors';
 import { useSeniorTasks } from '@/features/tasks/use-tasks';
 import { ApiError } from '@/lib/api-error';
 import { useTheme } from '@/theme';
@@ -87,6 +87,33 @@ export default function SeniorDashboardScreen() {
 
 function Dashboard({ profile }: { profile: Senior }) {
   const theme = useTheme();
+  const removeSenior = useRemoveSenior(profile.id);
+
+  function confirmRemoveProfile() {
+    Alert.alert(
+      `Remove ${profile.displayName}'s profile?`,
+      'If no care has been recorded, this permanently deletes the mistaken profile. Otherwise it archives the profile and removes it from everyone’s list while preserving care history.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove profile',
+          style: 'destructive',
+          onPress: () =>
+            removeSenior.mutate(undefined, {
+              onSuccess: (result) => {
+                Alert.alert(
+                  result.disposition === 'deleted' ? 'Profile deleted' : 'Profile archived',
+                  result.disposition === 'deleted'
+                    ? 'The empty profile was permanently deleted.'
+                    : 'The profile was removed from care lists and its history was preserved.',
+                  [{ text: 'OK', onPress: () => router.replace('/home') }],
+                );
+              },
+            }),
+        },
+      ],
+    );
+  }
 
   // Everything on this screen is today's, in the senior's own timezone. The
   // queries are declared unconditionally and enabled by permission, because a
@@ -366,6 +393,24 @@ function Dashboard({ profile }: { profile: Senior }) {
               })
             }
           />
+        ) : null}
+
+        {!profile.isSelf && can(profile, 'members.manage') ? (
+          <>
+            {removeSenior.isError ? (
+              <Text variant="secondary" color="danger">
+                {removeSenior.error instanceof ApiError
+                  ? removeSenior.error.message
+                  : 'This profile could not be removed.'}
+              </Text>
+            ) : null}
+            <Button
+              variant="danger"
+              label="Remove this profile"
+              loading={removeSenior.isPending}
+              onPress={confirmRemoveProfile}
+            />
+          </>
         ) : null}
       </Card>
     </Screen>

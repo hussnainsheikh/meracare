@@ -211,13 +211,19 @@ docker-compose.yml         local PostgreSQL for development and tests
 
 | Area | Where |
 |------|-------|
-| Care circle | `internal/members`, `GET/PATCH/DELETE /v1/seniors/{id}/members` |
+| Care circle | `internal/members`, `GET/PATCH/DELETE /v1/seniors/{id}/members`, self-service `DELETE .../members/me` |
 | Invitations | `internal/invitations`, `POST/GET /v1/seniors/{id}/invitations` |
 | Accept flow | `GET /v1/invitations/{token}`, `POST /v1/invitations/{token}/accept` |
 | Revoke invitation | `POST /v1/invitations/{id}/revoke` |
 | Permission delegation | `internal/care/delegation.go` |
 | Database | migration `0003_invitations` |
 | Mobile | care circle, invite flow, pending invitations, accept screen, member access editing |
+
+Lifecycle follow-up is complete: caregivers can leave their own circle only
+when another manager remains; professionals who create clients receive the
+full coordinator setup permissions on that relationship; empty managed
+profiles are deleted and profiles with care history are archived with all
+active access revoked.
 
 ### Verified end to end
 
@@ -276,7 +282,7 @@ docker-compose.yml         local PostgreSQL for development and tests
 |------|-------|
 | Medication domain | `internal/medications/medication.go` — statuses, transitions, derived missed |
 | Schedules | one schedule per time of day; "twice a day" is two rows |
-| Medication API | `GET/POST /v1/seniors/{id}/medications`, `GET/PATCH /v1/medications/{id}` |
+| Medication API | `GET/POST /v1/seniors/{id}/medications`, `GET/PATCH/DELETE /v1/medications/{id}` |
 | Today's medication | `GET /v1/seniors/{id}/medications/doses?scope=today\|upcoming\|missed\|window` |
 | Take / skip | `POST /v1/medications/{id}/instances/{instanceId}/take` and `/skip` |
 | Schedules API | `GET/POST /v1/medications/{id}/schedules`, `PATCH .../schedules/{id}` |
@@ -993,9 +999,11 @@ longer release blockers.
    not rewrite that. Editing a medication discards and regenerates only future
    *pending* doses; anything already due or acted on is untouched.
 
-9. **Stopping a medicine is `active = false`, never a delete.** Its doses are
-   care history. Stopping it discards future pending doses and ends generation;
-   the medicine, its schedules and everything recorded remain readable.
+9. **Stopping a medicine is `active = false` after a dose outcome exists.** Its
+   doses are care history. Stopping discards future pending doses and ends
+   generation; the medicine, schedules and recorded outcomes remain readable.
+   Before any dose is taken or skipped, a mistaken entry may instead be
+   permanently deleted with its pending schedule and creation event.
 
 10. **History is keyset-paged, not offset-paged.** A medicine taken twice a day
     for two years is fifteen hundred rows, and OFFSET makes the server count

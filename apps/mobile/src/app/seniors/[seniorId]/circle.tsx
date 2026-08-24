@@ -7,6 +7,7 @@ import { Button, Card, Illustration, Screen, Text } from '@/components/ui';
 import {
   useCircleMembers,
   useInvitations,
+  useLeaveCareCircle,
   useRevokeInvitation,
   useRevokeMember,
 } from '@/features/circle/use-circle';
@@ -31,6 +32,7 @@ export default function CareCircleScreen() {
   const mayInvite = senior.data ? can(senior.data, 'members.invite') : false;
   const mayManage = senior.data ? can(senior.data, 'members.manage') : false;
   const invitations = useInvitations(seniorId ?? null, senior.data !== undefined);
+  const leave = useLeaveCareCircle(seniorId ?? '');
 
   if (senior.isPending || members.isPending) {
     return (
@@ -59,6 +61,23 @@ export default function CareCircleScreen() {
   }
 
   const pending = (invitations.data ?? []).filter((invitation) => invitation.status === 'pending');
+  const self = members.data.find((member) => member.isSelf);
+  const seniorName = senior.data.displayName;
+
+  function confirmLeave() {
+    Alert.alert(
+      `Leave ${seniorName}'s care circle?`,
+      'You will lose access immediately. Care you already recorded will stay in the history.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: () => leave.mutate(undefined, { onSuccess: () => router.replace('/') }),
+        },
+      ],
+    );
+  }
 
   return (
     <Screen scrollable>
@@ -115,6 +134,29 @@ export default function CareCircleScreen() {
             />
           ))}
         </View>
+      ) : null}
+
+      {self && !self.isSenior ? (
+        <Card>
+          <Text variant="sectionHeading">Your access</Text>
+          <Text variant="body" color="secondary">
+            You can leave when another person can manage this care circle. Your past care records
+            will remain attributed to you.
+          </Text>
+          {leave.isError ? (
+            <Text variant="secondary" color="danger">
+              {leave.error instanceof ApiError
+                ? leave.error.message
+                : 'We could not remove your access.'}
+            </Text>
+          ) : null}
+          <Button
+            variant="danger"
+            label="Leave care circle"
+            loading={leave.isPending}
+            onPress={confirmLeave}
+          />
+        </Card>
       ) : null}
     </Screen>
   );

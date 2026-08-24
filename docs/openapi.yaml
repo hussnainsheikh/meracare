@@ -75,6 +75,13 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Entity" }
         default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Seniors]
+      operationId: removeSenior
+      description: Deletes an empty managed profile or archives one with care history.
+      responses:
+        "200": { $ref: "#/components/responses/Entity" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/seniors/{seniorId}/members:
     parameters: [{ $ref: "#/components/parameters/SeniorId" }]
     get:
@@ -98,7 +105,15 @@ paths:
       tags: [Care circle]
       operationId: revokeMember
       responses:
-        "204": { description: Revoked }
+        "200": { $ref: "#/components/responses/Entity" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/seniors/{seniorId}/members/me:
+    parameters: [{ $ref: "#/components/parameters/SeniorId" }]
+    delete:
+      tags: [Care circle]
+      operationId: leaveCareCircle
+      responses:
+        "200": { $ref: "#/components/responses/Entity" }
         default: { $ref: "#/components/responses/Error" }
   /v1/seniors/{seniorId}/invitations:
     parameters: [{ $ref: "#/components/parameters/SeniorId" }]
@@ -238,6 +253,13 @@ paths:
       operationId: updateMedication
       requestBody: { $ref: "#/components/requestBodies/JsonObject" }
       responses: { "200": { $ref: "#/components/responses/Entity" }, default: { $ref: "#/components/responses/Error" } }
+    delete:
+      tags: [Medications]
+      operationId: deleteMistakenMedication
+      description: Deletes only before a taken or skipped dose exists.
+      responses:
+        "204": { description: Deleted }
+        default: { $ref: "#/components/responses/Error" }
   /v1/medications/{medicationId}/schedules:
     parameters: [{ $ref: "#/components/parameters/MedicationId" }]
     get:

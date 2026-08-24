@@ -99,6 +99,11 @@ Statuses:
 -   created_at
 -   updated_at
 
+A medication entered by mistake may be permanently deleted only while it has
+no `taken` or `skipped` instance. The medication, schedules, pending instances,
+and creation activity are removed together. Once any dose outcome exists, the
+medication is stopped (`active = false`) so its clinical history remains.
+
 ### MedicationSchedule
 
 -   id

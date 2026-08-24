@@ -45,14 +45,14 @@ func TestFirstMigrationIsInit(t *testing.T) {
 	}
 }
 
-func TestLatestMigrationCompletesTheMVPCoordinationDomains(t *testing.T) {
+func TestLatestMigrationAddsSafeCareLifecycleControls(t *testing.T) {
 	migrations, err := database.LoadMigrations()
 	if err != nil {
 		t.Fatalf("LoadMigrations() error = %v", err)
 	}
 
 	latest := migrations[len(migrations)-1]
-	if latest.Version != 10 || latest.Name != "notes_and_messages" {
-		t.Errorf("latest migration = %d_%s, want 0010_notes_and_messages", latest.Version, latest.Name)
+	if latest.Version != 11 || latest.Name != "care_lifecycle" {
+		t.Errorf("latest migration = %d_%s, want 0011_care_lifecycle", latest.Version, latest.Name)
 	}
 }
