@@ -9,7 +9,7 @@ import {
   schedulesLabel,
 } from '@meracare/contracts';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Alert, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { Button, Card, Screen, Text } from '@/components/ui';
 import { useCircleMembers } from '@/features/circle/use-circle';
@@ -21,6 +21,7 @@ import {
 } from '@/features/medications/use-medications';
 import { useSenior } from '@/features/seniors/use-seniors';
 import { ApiError } from '@/lib/api-error';
+import { confirmAction } from '@/lib/dialogs';
 import { useTheme } from '@/theme';
 
 /**
@@ -80,21 +81,16 @@ export default function MedicationDetailScreen() {
   const doses = history.data?.pages.flatMap((page) => page.items) ?? [];
 
   function confirmDelete() {
-    Alert.alert(
-      'Delete mistaken medication?',
-      'This permanently removes the medication and its unrecorded doses. If anyone has taken or skipped a dose, MeraCare will keep the history and ask you to stop it instead.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () =>
-            deleteMedication.mutate(detail.id, {
-              onSuccess: () => router.back(),
-            }),
-        },
-      ],
-    );
+    confirmAction({
+      title: 'Delete mistaken medication?',
+      message:
+        'This permanently removes the medication and its unrecorded doses. If anyone has taken or skipped a dose, MeraCare will keep the history and ask you to stop it instead.',
+      confirmLabel: 'Delete',
+      onConfirm: () =>
+        deleteMedication.mutate(detail.id, {
+          onSuccess: () => router.back(),
+        }),
+    });
   }
 
   return (

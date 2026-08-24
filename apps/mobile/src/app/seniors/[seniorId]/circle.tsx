@@ -1,7 +1,7 @@
 import type { CircleMember, Invitation } from '@meracare/contracts';
 import { can, roleLabel } from '@meracare/contracts';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Alert, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { Button, Card, Illustration, Screen, Text } from '@/components/ui';
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/features/circle/use-circle';
 import { useSenior } from '@/features/seniors/use-seniors';
 import { ApiError } from '@/lib/api-error';
+import { confirmAction } from '@/lib/dialogs';
 import { useTheme } from '@/theme';
 
 /**
@@ -65,18 +66,13 @@ export default function CareCircleScreen() {
   const seniorName = senior.data.displayName;
 
   function confirmLeave() {
-    Alert.alert(
-      `Leave ${seniorName}'s care circle?`,
-      'You will lose access immediately. Care you already recorded will stay in the history.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: () => leave.mutate(undefined, { onSuccess: () => router.replace('/') }),
-        },
-      ],
-    );
+    confirmAction({
+      title: `Leave ${seniorName}'s care circle?`,
+      message:
+        'You will lose access immediately. Care you already recorded will stay in the history.',
+      confirmLabel: 'Leave',
+      onConfirm: () => leave.mutate(undefined, { onSuccess: () => router.replace('/') }),
+    });
   }
 
   return (
@@ -179,18 +175,13 @@ function MemberCard({
   const removable = mayManage && !member.isSenior && !member.isSelf;
 
   function confirmRemove() {
-    Alert.alert(
-      `Remove ${member.displayName}?`,
-      'They will lose access straight away. Anything they have already recorded stays in the care history.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => revokeMember.mutate(member.id),
-        },
-      ],
-    );
+    confirmAction({
+      title: `Remove ${member.displayName}?`,
+      message:
+        'They will lose access straight away. Anything they have already recorded stays in the care history.',
+      confirmLabel: 'Remove',
+      onConfirm: () => revokeMember.mutate(member.id),
+    });
   }
 
   return (
