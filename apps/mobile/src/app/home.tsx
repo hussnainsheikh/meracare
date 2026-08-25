@@ -3,7 +3,7 @@ import { statusLabel, taskTimeLabel } from '@meracare/contracts';
 import { Link, Redirect, router } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { Button, Card, Screen, Text } from '@/components/ui';
+import { Button, Card, Illustration, Screen, Text } from '@/components/ui';
 import { useSession } from '@/features/auth/session-provider';
 import { useAuthActions } from '@/features/auth/use-auth-actions';
 import { useUnreadCount } from '@/features/notifications/use-notifications';
@@ -219,6 +219,7 @@ function EmptyState() {
 
   return (
     <Card>
+      <Illustration name="addSenior" height={150} />
       <Text variant="sectionHeading">Let&apos;s get set up</Text>
       <Text variant="body" color="secondary">
         Add the person you are caring for — or yourself. You can invite family and caregivers

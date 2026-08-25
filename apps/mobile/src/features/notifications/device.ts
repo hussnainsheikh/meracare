@@ -23,10 +23,10 @@ let cached: string | null = null;
 /**
  * Returns this installation's identifier, creating it on first use.
  *
- * Stored in the keychain alongside the session rather than in plain storage —
- * not because it is a secret, but because it is the key the server uses to
- * recognise this phone, and a value that survives a reinstall of the app but
- * not a change of device is exactly what the keychain gives.
+ * Native uses the keychain alongside the session. Web uses localStorage through
+ * the platform-specific adapter because the identifier is not a credential and
+ * must survive a tab closing. Auth tokens use the narrower sessionStorage on
+ * web and never share this path.
  */
 export async function deviceId(): Promise<string> {
   if (cached !== null) return cached;
