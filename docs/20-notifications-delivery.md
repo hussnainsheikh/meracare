@@ -22,8 +22,8 @@ only path that works today.
 
 **Server-delivered notifications** (Phase 11) — the API decides, records, and
 pushes. Only a server can know that a task went unrecorded, or that somebody
-*else* just gave a dose, so these are the only route for `TASK_OVERDUE` and
-`CARE_ACTIVITY`. They also carry an inbox, which a fire-and-forget local
+*else* just gave a dose, so these are the only route for `TASK_OVERDUE`,
+`MEDICATION_MISSED`, and `CARE_ACTIVITY`. They also carry an inbox, which a fire-and-forget local
 notification cannot.
 
 **Exactly one of them schedules any given reminder.** The device decides which:
@@ -44,6 +44,7 @@ complete and dormant.
 | `TASK_REMINDER` | 15 min before a task | the task |
 | `APPOINTMENT_REMINDER` | 24 h and 1 h before | the appointment |
 | `TASK_OVERDUE` | 30 min after a task's time, if still unrecorded | the task |
+| `MEDICATION_MISSED` | 2 h after a dose, if still unrecorded | today's medication |
 | `CARE_ACTIVITY` | when somebody else records care | the activity timeline |
 
 The 15-minute and 1-hour offsets are Phase 8's, unchanged, so a dose reminds at
@@ -51,10 +52,13 @@ the same moment whichever path delivers it. The 24-hour appointment reminder is
 Phase 11's one addition: a day's notice is what lets somebody arrange a lift; an
 hour's notice is what gets them out of the door.
 
-There is deliberately **no missed-medication type**. Missed is derived from the
-clock and never stored (`plans/phase4.md` §8, `plans/phase5.md` §8); a
-notification type for it would mean inventing the background sweep those phases
-refused.
+`MEDICATION_MISSED` does not store a missed state. The medication domain still
+derives missed from the clock using its two-hour grace period; the scheduler
+asks for pending doses whose grace period just expired and stores only the
+notification decision. Every active member with `medications.view` receives it
+unless they disable missed-medication alerts, so it works for solo self-care as
+well as family and professional care. A taken or skipped dose is absent from the
+sweep and never escalates.
 
 `CARE_ACTIVITY` covers four of the fifteen care-event types — a dose recorded, a
 task completed, an appointment completed, a member joining. A care event is a
@@ -119,7 +123,9 @@ through tasks, medications, appointments, and members.
 
 ## Storage
 
-`0009_notification_delivery.sql` adds two preference columns and one table.
+`0009_notification_delivery.sql` adds the delivery table and its first two
+server-notification preferences. `0012_missed_medication_alerts.sql` adds the
+missed-dose preference and extends the notification type constraint.
 
 One table, not two. §51 allows a separate job table; it would carry the
 notification id, its time, and its delivery state — a second row that exists
@@ -198,7 +204,7 @@ spans several seniors' zones.
 | `GET` | `/v1/notifications` | inbox page + `unreadCount`; `cursor`, `limit` |
 | `PATCH` | `/v1/notifications/{id}/read` | mark one read (idempotent) |
 | `POST` | `/v1/notifications/read-all` | mark every arrived one read |
-| `GET`/`PATCH` | `/v1/notifications/preferences` | the five switches |
+| `GET`/`PATCH` | `/v1/notifications/preferences` | the six switches |
 | `POST` | `/v1/notifications/devices` | register or refresh an install |
 | `DELETE` | `/v1/notifications/devices/{deviceId}` | deactivate |
 | `GET` | `/v1/notifications/reminders` | the device-scheduled plan (Phase 8) |
@@ -341,3 +347,6 @@ On a development build on a physical iPhone and a physical Android phone:
    the home badge decreased.
 7. Uninstall the app, then let another notification fall due. The token must be
    retired: `notification_devices.active` false and `push_token` null.
+8. Create another dose, leave it pending, and confirm `MEDICATION_MISSED`
+   arrives once after the two-hour grace period for each opted-in authorized
+   care-circle member. Taking or skipping it before then must suppress the alert.

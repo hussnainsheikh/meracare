@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
 ## Current Phase
 
@@ -8,7 +8,7 @@ Last updated: 2026-08-24
 remain.**
 
 The implemented coordination baseline (Phases 1–9) is complete. Phase 10 added Google sign-in. Phase 11 adds
-the server-side notification system: a persisted inbox, five notification types,
+the server-side notification system: a persisted inbox, six notification types,
 a scheduler that materialises and delivers, an Expo push provider behind an
 interface, retries, and the mobile inbox with an unread badge. Everything below
 the push provider is built and tested; **no real push has ever been sent**,
@@ -590,12 +590,14 @@ consequence — it happened, to a person, at a time, and "already sent" is the
 only thing that stops sending it twice. `0009_notification_delivery.sql` writes
 that down: one `notifications` table carrying its own delivery state, plus the
 two preference columns (`overdue_task_alerts`, `care_activity`) that 0008
-refused to add while nothing could deliver them.
+refused to add while nothing could deliver them. Migration 0012 subsequently
+added `missed_medication_alerts` and the `MEDICATION_MISSED` escalation type.
 
-- **Five types.** The three Phase 8 reminder categories, plus the two only a
-  server can know about: `TASK_OVERDUE` and `CARE_ACTIVITY`. There is still no
-  missed-medication type — that would mean inventing the sweep Phases 4 and 5
-  refused. Appointments gained a 24-hour reminder beside the existing 1-hour one;
+- **Six types.** The three Phase 8 reminder categories, plus the three only a
+  server can know about: `TASK_OVERDUE`, `MEDICATION_MISSED`, and `CARE_ACTIVITY`.
+  Missed remains a clock-derived medication status rather than stored state; the
+  scheduler only records an escalation after the domain's two-hour grace period.
+  Appointments gained a 24-hour reminder beside the existing 1-hour one;
   every other offset is Phase 8's, so a dose reminds at the same moment whichever
   path delivers it.
 - **One scheduler**, started and stopped explicitly by `cmd/api`. A pass decides,
@@ -1136,15 +1138,13 @@ longer release blockers.
    placeholder deleted. Nothing referenced it. **This is a deliberate change to
    a Phase 1 artefact**, recorded here rather than made silently.
 
-4. **Three documented types are deliberately never emitted.** `TASK_MISSED` and
-   `MEDICATION_MISSED` are derived from the clock, not performed by anybody —
-   nothing writes "missed" anywhere in the system, precisely so no background
-   sweep has to be alive for the data to be true (Phases 4 and 5). Emitting them
-   would mean inventing the sweep those phases refused; they belong to Phase 8,
-   where a notification is the thing that actually happens and has a time.
-   `NOTE_ADDED` has no domain yet. All three stay in the vocabulary because the
-   vocabulary is the documentation's, and a test asserts no code path produces
-   one.
+4. **Two documented care-event types are deliberately never emitted.**
+   `TASK_MISSED` and `MEDICATION_MISSED` are derived from the clock, not
+   performed by anybody, so neither is fabricated as a timeline event and no
+   care-domain record stores "missed". The notification system may independently
+   record a `MEDICATION_MISSED` escalation after asking the medication domain
+   for its derived answer. Both remain in the care-event vocabulary, and a test
+   asserts no care-domain path emits one.
 
 5. **A transaction, not a broker.** `careevents.Recorder` runs the domain change
    and its event in one PostgreSQL transaction. A completion with no event is a
@@ -1433,10 +1433,10 @@ string cannot reach the dashboard.
   messages — none of which Phase 8 covers — and the credentials to verify any of
   it were unavailable. Device registrations are stored so the phase that adds a
   sender starts with the tokens.
-- **Escalation** (Phase 8). docs/08 describes reminder → grace period → overdue
-  → notify assignee → optionally notify family. The first step exists; the rest
-  is push, and the "overdue" and "missed" signals are still derived at read time
-  rather than emitted, exactly as Phases 4, 5, and 7 left them.
+- **Escalation** (delivered after Phase 11). Overdue task and missed-medication
+  alerts are materialised after their domain-owned grace periods without storing
+  a second overdue or missed state. Authorized, opted-in care-circle members are
+  notified; real phone delivery still requires the external push configuration.
 - **The four other preference categories** (Phase 8). Phase 11 delivered two of
   them — overdue task alerts and care activity — as columns on the existing
   table, each with the delivery path that makes it mean something. Messages and
@@ -1471,8 +1471,8 @@ Phase 11 built them: docs/08's escalation flow — reminder, grace period,
 overdue, notify the assignee — is what the scheduler now implements, and the
 residual revocation window in Blocker 4 is narrowed for anyone the server
 delivers to, because a revoked caregiver leaves the roster the instant they are
-revoked. `TASK_MISSED` and `MEDICATION_MISSED` remain deliberately unemitted:
-Phase 11 alerts on overdue tasks without writing a "missed" state anywhere.
+revoked. `TASK_OVERDUE` and `MEDICATION_MISSED` are emitted without writing an
+overdue or missed state into their care-domain records.
 
 What still needs doing before push is real is **configuration, not code** —
 an EAS project, push credentials, and a device build (Blocker 7).

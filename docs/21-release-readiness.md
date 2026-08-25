@@ -11,7 +11,8 @@ work. A checked item must have evidence; configuration must never be inferred.
       delete/archive, caregiver leave protection, and professional creator setup permissions.
 - [x] OpenAPI route contract in `docs/openapi.yaml`.
 - [x] Inter typography and bundled font license.
-- [x] Notification inbox, scheduler, local fallback, and Expo provider implementation.
+- [x] Notification inbox, scheduler, local fallback, Expo provider, and
+      missed-medication caregiver escalation implementation.
 - [x] Five locally bundled, Deep-Teal unDraw onboarding/empty-state illustrations
       with source and license records in `ASSET_LICENSES.md`.
 - [x] Bundle identifiers: `app.meracare.mobile`.
@@ -48,6 +49,8 @@ work. A checked item must have evidence; configuration must never be inferred.
 - [ ] iPhone development/release build: email, Google, Apple, local reminders,
       push registration, delivery, and every deep link.
 - [ ] Android development/release build: the same checks; do not use Expo Go for push.
+- [ ] Missed-dose acceptance: pending dose alerts every opted-in authorized care-circle
+      member once after two hours; taken/skipped doses do not alert.
 - [ ] Sign out with an empty queue, a queued offline action, and a deactivated device.
 - [ ] Accessibility: large text, VoiceOver/TalkBack labels, focus order, contrast,
       and 48dp targets.
