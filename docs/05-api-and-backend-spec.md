@@ -74,7 +74,16 @@ POST   /v1/seniors/{id}/medications
 PATCH  /v1/medications/{id}
 DELETE /v1/medications/{id}
 POST   /v1/medications/{id}/instances/{instanceId}/take
+POST   /v1/medications/{id}/instances/{instanceId}/skip
+POST   /v1/medications/instances/{instanceId}/take
+POST   /v1/medications/instances/{instanceId}/skip
 ```
+
+The direct instance routes support privacy-preserving notification actions: the
+notification carries a dose identifier but no medication details. The API
+resolves the dose and requires `medications.record` for its senior; unauthorized
+and unknown identifiers return the same 404. All four action routes share the
+same idempotent transition.
 
 Medication deletion returns `204` only before a taken/skipped dose exists; it
 returns `409` once history requires the medication to be stopped instead.

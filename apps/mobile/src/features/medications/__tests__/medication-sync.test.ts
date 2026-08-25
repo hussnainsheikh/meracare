@@ -75,6 +75,16 @@ describe('replayMedicationOperation', () => {
     expect(options.body).toEqual({ notes: 'She was asleep' });
   });
 
+  it('replays a notification action through the direct dose route', async () => {
+    mockApiRequest.mockResolvedValue({});
+
+    await replayMedicationOperation(queued({ entityId: '2fb53d18-8ec8-4f21-9088-53a06f7647f6' }));
+
+    expect(mockApiRequest.mock.calls[0]?.[0]).toBe(
+      '/medications/instances/2fb53d18-8ec8-4f21-9088-53a06f7647f6/take',
+    );
+  });
+
   // Retrying it would never succeed, and would keep a stale entry alive
   // forever. Setting it aside surfaces it to somebody instead.
   it('sets aside an entry it cannot address', async () => {

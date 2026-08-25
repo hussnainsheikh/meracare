@@ -29,6 +29,7 @@ import { cacheDoses, cachedDoses, sqliteSyncStore } from '@/lib/offline/database
 import { newOperation } from '@/lib/offline/sync-queue';
 
 import { doseEntityId } from './medication-sync';
+import { cancelSnoozedMedicationNotifications } from '@/features/notifications/scheduler';
 
 /**
  * Medication data.
@@ -313,8 +314,10 @@ function useDoseAction(seniorId: string, operationType: 'take' | 'skip') {
       }
     },
 
-    onSettled: (_result, _error, { medicationId }) =>
-      invalidateOneMedication(queryClient, seniorId, medicationId),
+    onSettled: async (_result, error, { medicationId, doseId }) => {
+      if (!error) await cancelSnoozedMedicationNotifications(doseId).catch(() => {});
+      await invalidateOneMedication(queryClient, seniorId, medicationId);
+    },
   });
 }
 

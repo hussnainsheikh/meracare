@@ -175,6 +175,27 @@ list of the material that would actually leak.
 
 Push payloads carry five identifiers and nothing else.
 
+## Medication Notification Actions
+
+Medication reminders and missed-dose alerts use the `medication_actions` OS
+category. It offers **Taken**, **Skip**, and **Remind in 10 min**.
+
+- **Taken** opens MeraCare, re-authorizes the user against the dose's senior,
+  and records the idempotent action. If offline, it is stored in the existing
+  SQLite mutation queue and replayed later.
+- **Skip** opens MeraCare and shows a confirmation before using the same
+  authorization and offline path. A lock-screen mis-tap must not silently
+  create an intentional skip.
+- **Remind in 10 min** schedules a one-off local notification with the same
+  privacy-safe wording and action category. Reminder-plan reconciliation leaves
+  snoozed notifications alone. Recording the dose on that device cancels its
+  follow-up, and sign-out still clears it.
+
+The category identifier is sent through Expo for remote pushes and attached
+directly to device-scheduled reminders. This is not a continuously ringing or
+full-screen alarm; OS sound, focus modes, and notification presentation remain
+authoritative.
+
 The words are stored on the notification as they were sent, so the inbox shows
 what the phone showed, and goes on saying so after the appointment moves — the
 same reasoning that makes a care event a historical record.
@@ -350,3 +371,6 @@ On a development build on a physical iPhone and a physical Android phone:
 8. Create another dose, leave it pending, and confirm `MEDICATION_MISSED`
    arrives once after the two-hour grace period for each opted-in authorized
    care-circle member. Taking or skipping it before then must suppress the alert.
+9. Expand a medication notification and verify **Taken**, **Skip**, and
+   **Remind in 10 min**. Taken must be idempotent, Skip must confirm, and the
+   follow-up must arrive once after ten minutes without being removed by plan sync.

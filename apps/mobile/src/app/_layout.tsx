@@ -14,6 +14,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { SessionProvider, useSession } from '@/features/auth/session-provider';
 import {
   usePendingDestination,
+  usePendingMedicationNotificationAction,
   useReminderSync,
   useReminderTaps,
 } from '@/features/notifications/use-reminder-sync';
@@ -62,6 +63,7 @@ function Reminders() {
   useReminderSync(isSignedIn, isRestoring);
   useReminderTaps(isSignedIn, isRestoring);
   usePendingDestination(isSignedIn, isRestoring);
+  usePendingMedicationNotificationAction(isSignedIn, isRestoring);
 
   return null;
 }

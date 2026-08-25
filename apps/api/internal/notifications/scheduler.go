@@ -368,10 +368,11 @@ func (s *Scheduler) deliverOne(
 	messages := make([]PushMessage, 0, len(devices))
 	for _, device := range devices {
 		messages = append(messages, PushMessage{
-			Token: device.PushToken,
-			Title: notification.Title,
-			Body:  notification.Body,
-			Data:  payloadFor(notification),
+			Token:      device.PushToken,
+			Title:      notification.Title,
+			Body:       notification.Body,
+			Data:       payloadFor(notification),
+			CategoryID: actionCategoryFor(notification.Type),
 		})
 	}
 
@@ -423,6 +424,13 @@ func (s *Scheduler) deliverOne(
 		return DeliveryFailed, s.repository.Settle(
 			ctx, notification.ID, DeliveryFailed, now, failure)
 	}
+}
+
+func actionCategoryFor(t Type) string {
+	if t == TypeMedicationReminder || t == TypeMedicationMissed {
+		return "medication_actions"
+	}
+	return ""
 }
 
 // backoff spaces out retries. Deliberately conservative: a push that failed is

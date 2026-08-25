@@ -308,6 +308,20 @@ paths:
       operationId: skipMedication
       requestBody: { $ref: "#/components/requestBodies/OptionalJsonObject" }
       responses: { "200": { $ref: "#/components/responses/Entity" }, default: { $ref: "#/components/responses/Error" } }
+  /v1/medications/instances/{instanceId}/take:
+    parameters: [{ $ref: "#/components/parameters/InstanceId" }]
+    post:
+      tags: [Medications]
+      operationId: takeMedicationFromNotification
+      requestBody: { $ref: "#/components/requestBodies/OptionalJsonObject" }
+      responses: { "200": { $ref: "#/components/responses/Entity" }, default: { $ref: "#/components/responses/Error" } }
+  /v1/medications/instances/{instanceId}/skip:
+    parameters: [{ $ref: "#/components/parameters/InstanceId" }]
+    post:
+      tags: [Medications]
+      operationId: skipMedicationFromNotification
+      requestBody: { $ref: "#/components/requestBodies/OptionalJsonObject" }
+      responses: { "200": { $ref: "#/components/responses/Entity" }, default: { $ref: "#/components/responses/Error" } }
   /v1/seniors/{seniorId}/appointments:
     parameters: [{ $ref: "#/components/parameters/SeniorId" }]
     get:

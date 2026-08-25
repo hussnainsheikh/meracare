@@ -28,6 +28,12 @@ bundled, Deep-Teal unDraw illustrations for onboarding and empty states. Their
 source SVGs, runtime PNGs, modifications, and license records are retained in
 the repository.
 
+Medication notifications now expose native **Taken**, **Skip**, and **Remind in
+10 min** actions. Taken uses a direct dose-id endpoint with the existing
+authorization and idempotent transition, Skip confirms in the foreground, and
+offline actions use the durable medication queue. This remains a standard OS
+notification rather than a continuously ringing full-screen alarm.
+
 This does **not** mean the product is ready to publish. Apple and Google console
 configuration, EAS/push credentials, physical-device acceptance, legal approval
 of the privacy policy, store listing values, and store/social artwork exports
@@ -284,7 +290,7 @@ active access revoked.
 | Schedules | one schedule per time of day; "twice a day" is two rows |
 | Medication API | `GET/POST /v1/seniors/{id}/medications`, `GET/PATCH/DELETE /v1/medications/{id}` |
 | Today's medication | `GET /v1/seniors/{id}/medications/doses?scope=today\|upcoming\|missed\|window` |
-| Take / skip | `POST /v1/medications/{id}/instances/{instanceId}/take` and `/skip` |
+| Take / skip | Nested medication routes plus privacy-preserving `/v1/medications/instances/{instanceId}/take` and `/skip` for notification actions |
 | Schedules API | `GET/POST /v1/medications/{id}/schedules`, `PATCH .../schedules/{id}` |
 | One-off dose | `POST /v1/medications/{id}/doses` |
 | History | `GET /v1/medications/{id}/instances` — keyset paged, newest first |

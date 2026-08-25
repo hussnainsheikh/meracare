@@ -51,6 +51,8 @@ work. A checked item must have evidence; configuration must never be inferred.
 - [ ] Android development/release build: the same checks; do not use Expo Go for push.
 - [ ] Missed-dose acceptance: pending dose alerts every opted-in authorized care-circle
       member once after two hours; taken/skipped doses do not alert.
+- [ ] Medication notification actions on iPhone and Android: Taken records once,
+      Skip confirms, and Remind in 10 min produces one follow-up.
 - [ ] Sign out with an empty queue, a queued offline action, and a deactivated device.
 - [ ] Accessibility: large text, VoiceOver/TalkBack labels, focus order, contrast,
       and 48dp targets.
